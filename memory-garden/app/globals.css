@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/* Rivendell Color Palette */
+:root {
+  /* Main colors */
+  --parchment: #F5F5DC;     /* warm parchment - like Bilbo's writings */
+  --forest: #2C3E2C;        /* deep forest green - Rivendell's eternal woods */
+  --gold: #D4AF37;          /* soft gold - elvish light and wisdom */
+  --sage: #6B8E5A;          /* muted sage - peaceful knowledge */
+  --bronze: #CD853F;        /* warm bronze - gentle encouragement */
+  --scroll-white: #FEFEFE;  /* card backgrounds - aged elvish scrolls */
+}
+
+@theme inline {
+  /* Rivendell Color System */
+  --color-parchment: var(--parchment);
+  --color-forest: var(--forest);
+  --color-gold: var(--gold);
+  --color-sage: var(--sage);
+  --color-bronze: var(--bronze);
+  --color-scroll-white: var(--scroll-white);
+  
+  /* Font families */
+  --font-cinzel: var(--font-cinzel), serif;
+  --font-crimson: var(--font-crimson), serif;
+  --font-inter: var(--font-inter), sans-serif;
+  
+  /* Spacing for elvish elegance */
+  --spacing-elvish: 1.618rem; /* Golden ratio */
+}
+
+/* Elvish component styles */
+@layer components {
+  .card-elvish {
+    @apply bg-scroll-white border border-gold/20 rounded-lg p-6 shadow-lg;
+    @apply hover:shadow-xl hover:border-gold/40 transition-all duration-300;
+    @apply relative overflow-hidden;
+  }
+  
+  .card-elvish::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-gold/5 to-transparent pointer-events-none;
+  }
+
+  /* Starlight effect on hover */
+  .card-elvish:hover::after {
+    content: '';
+    @apply absolute top-0 left-0 w-full h-full pointer-events-none;
+    background: radial-gradient(circle at 50% 50%, rgba(212,175,55,0.1) 0%, transparent 70%);
+    animation: starlight 2s ease-in-out infinite;
+  }
+  
+  .btn-elvish {
+    @apply bg-gold text-forest px-6 py-3 rounded-md font-medium font-inter;
+    @apply hover:bg-gold/90 transition-all duration-200;
+    @apply shadow-md hover:shadow-lg hover:scale-[1.02];
+    @apply active:scale-[0.98];
+  }
+
+  /* Gentle glow on buttons */
+  .btn-elvish:hover {
+    box-shadow: 0 4px 20px rgba(212,175,55,0.3);
+  }
+  
+  .text-elvish-title {
+    @apply font-cinzel text-forest font-semibold;
+  }
+  
+  .text-elvish-body {
+    @apply font-crimson text-forest/80 leading-relaxed;
+  }
+  
+  .input-elvish {
+    @apply bg-scroll-white border border-gold/30 rounded-md px-4 py-2;
+    @apply focus:border-gold focus:ring-2 focus:ring-gold/20 focus:outline-none;
+    @apply font-crimson text-forest transition-all duration-200;
+  }
+
+  .input-elvish:focus {
+    box-shadow: 0 0 0 3px rgba(212,175,55,0.1), 0 2px 8px rgba(212,175,55,0.15);
+  }
+
+  /* Success animation for helpful votes */
+  .sparkle-animation {
+    animation: sparkle 0.6s ease-out;
+  }
+
+  /* Flowing water-like animations */
+  .flow-in {
+    animation: flowIn 0.5s ease-out;
+  }
+
+  .fade-in-up {
+    animation: fadeInUp 0.4s ease-out;
+  }
+}
+
+/* Elvish animations */
+@keyframes starlight {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+@keyframes sparkle {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes flowIn {
+  0% { 
+    opacity: 0; 
+    transform: translateY(10px) scale(0.95); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+  }
+}
+
+@keyframes fadeInUp {
+  0% { 
+    opacity: 0; 
+    transform: translateY(20px); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
