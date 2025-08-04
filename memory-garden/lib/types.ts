@@ -10,7 +10,7 @@ export interface Topic {
 export interface Card {
   id: string
   topic_id: string
-  type: 'analogy' | 'definition'
+  type: 'analogy' | 'definition' | 'knowledge'
   content: string
   author_name: string | null
   helpful_count: number

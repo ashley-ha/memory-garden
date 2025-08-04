@@ -70,24 +70,21 @@ export default function TopicPage({ params }: TopicPageProps) {
 
         {/* Topic Header */}
         <header className="text-center mb-12 fade-in-up">
-          <h1 className="text-elvish-title text-3xl mb-4">🌌 {topic.title}</h1>
+          <h1 className="text-elvish-title text-3xl mb-4">{topic.title}</h1>
           <p className="text-elvish-body text-lg mb-2">
             {topic.description}
-          </p>
-          <p className="text-elvish-body text-sm text-forest/60 mb-6">
-            "In this hall, wisdom flows like starlight"
           </p>
           <div className="flex justify-center space-x-4">
             <Link href={`/study/${topic.id}`}>
               <button className="btn-elvish">
-                📚 Begin Study
+                Study
               </button>
             </Link>
             <button 
               onClick={() => setShowCardForm(!showCardForm)}
               className="btn-elvish bg-transparent border border-gold text-gold hover:bg-gold hover:text-forest"
             >
-              ✨ Contribute Wisdom
+            Contribute Wisdom
             </button>
           </div>
         </header>
@@ -124,14 +121,23 @@ export default function TopicPage({ params }: TopicPageProps) {
               </h2>
               
               {/* Group cards by type */}
-              {['analogy', 'definition'].map((cardType) => {
+              {['analogy', 'definition', 'knowledge'].map((cardType) => {
                 const typeCards = cards.filter(card => card.type === cardType)
                 if (typeCards.length === 0) return null
+                
+                const getCardTypeTitle = (type: string) => {
+                  switch (type) {
+                    case 'analogy': return 'Analogies'
+                    case 'definition': return 'Definitions'
+                    case 'knowledge': return 'Knowledge Sharing'
+                    default: return type
+                  }
+                }
                 
                 return (
                   <div key={cardType} className="space-y-4">
                     <h3 className="text-elvish-title text-lg capitalize">
-                      {cardType === 'analogy' ? 'Analogies' : 'Definitions'}
+                      {getCardTypeTitle(cardType)}
                     </h3>
                     <div className="grid gap-4 md:grid-cols-2">
                       {typeCards.map((card) => (
@@ -154,9 +160,8 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
   topicId: string
   onCardCreated: () => void
 }) {
-  const [type, setType] = useState<'analogy' | 'definition'>('analogy')
+  const [type, setType] = useState<'analogy' | 'definition' | 'knowledge'>('analogy')
   const [content, setContent] = useState('')
-  const [authorName, setAuthorName] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -170,8 +175,7 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
         body: JSON.stringify({
           topicId,
           type,
-          content,
-          authorName: authorName.trim() || null
+          content
         })
       })
 
@@ -195,7 +199,7 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
         <label className="block text-sm font-medium text-forest mb-2">
           Type of Wisdom
         </label>
-        <div className="flex space-x-4">
+        <div className="flex flex-wrap gap-4">
           <label className="flex items-center">
             <input
               type="radio"
@@ -218,37 +222,39 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
             />
             <span className="text-sm">Definition</span>
           </label>
+          <label className="flex items-center">
+            <input
+              type="radio"
+              name="cardType"
+              value="knowledge"
+              checked={type === 'knowledge'}
+              onChange={() => setType('knowledge')}
+              className="mr-2"
+            />
+            <span className="text-sm">Knowledge</span>
+          </label>
         </div>
       </div>
 
       <div>
         <label className="block text-sm font-medium text-forest mb-1">
-          {type === 'analogy' ? 'Your Analogy' : 'Your Definition'}
+          {type === 'analogy' ? 'Your Analogy' : type === 'definition' ? 'Your Definition' : 'Your Knowledge'}
         </label>
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
           className="input-elvish w-full h-32 resize-none"
-          placeholder={type === 'analogy' 
-            ? "Explain this concept using a relatable comparison..."
-            : "Provide a clear, precise definition..."
+          placeholder={
+            type === 'analogy' 
+              ? "Explain this concept using a relatable comparison..."
+              : type === 'definition'
+              ? "Provide a clear, precise definition..."
+              : "Share practical knowledge, insights, or facts about this topic..."
           }
           required
         />
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-forest mb-1">
-          Your Name (optional)
-        </label>
-        <input
-          type="text"
-          value={authorName}
-          onChange={(e) => setAuthorName(e.target.value)}
-          className="input-elvish w-full"
-          placeholder="How should we credit you?"
-        />
-      </div>
 
       <div className="flex space-x-3">
         <button 
@@ -282,8 +288,14 @@ function CardDisplay({ card }: { card: Card }) {
     
     setIsVoting(true)
     try {
-      const { getUserSession } = await import('@/lib/session')
-      const userSession = getUserSession()
+      // Simple session generation for anonymous users
+      let userSession = 'anonymous'
+      if (typeof window !== 'undefined') {
+        userSession = localStorage.getItem('memory-garden-session') || crypto.randomUUID()
+        if (!localStorage.getItem('memory-garden-session')) {
+          localStorage.setItem('memory-garden-session', userSession)
+        }
+      }
       
       const response = await fetch(`/api/cards/${card.id}/vote`, {
         method: 'POST',
@@ -294,13 +306,13 @@ function CardDisplay({ card }: { card: Card }) {
       if (response.ok) {
         const data = await response.json()
         setHasVoted(true)
-        setHelpfulCount(data.helpful_count)
+        setHelpfulCount(prev => prev + 1)
         // Show sparkle animation
         setShowSparkle(true)
         setTimeout(() => setShowSparkle(false), 600)
       } else {
         const error = await response.json()
-        if (error.error.includes('already voted')) {
+        if (error.error && error.error.includes('already voted')) {
           setHasVoted(true)
         }
       }

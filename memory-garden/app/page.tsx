@@ -11,10 +11,16 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
-  const fetchTopics = async () => {
+  const fetchTopics = async (search = '') => {
     try {
-      const response = await fetch('/api/topics')
+      setIsLoading(true)
+      const params = new URLSearchParams()
+      if (search) params.append('search', search)
+      params.append('limit', '6') // Limit to top 6 scrolls
+      
+      const response = await fetch(`/api/topics?${params}`)
       if (response.ok) {
         const data = await response.json()
         setTopics(data)
@@ -26,6 +32,11 @@ export default function Home() {
     }
   }
 
+  const handleSearch = (query: string) => {
+    setSearchQuery(query)
+    fetchTopics(query)
+  }
+
   const handleCreateTopic = async (title: string, description: string) => {
     const response = await fetch('/api/topics', {
       method: 'POST',
@@ -34,7 +45,7 @@ export default function Home() {
     })
 
     if (response.ok) {
-      fetchTopics() // Refresh the list
+      fetchTopics(searchQuery) // Refresh the list with current search
     } else {
       throw new Error('Failed to create topic')
     }
@@ -68,49 +79,77 @@ export default function Home() {
         {/* Header */}
         <header className="text-center mb-12 fade-in-up">
           <h1 className="text-elvish-title text-4xl mb-4">
-            ✨ Memory Garden ✨
+            Memory Garden
           </h1>
-          <p className="text-elvish-body text-lg mb-2">
-            "The Last Homely House East of the Sea"
-          </p>
           <p className="text-elvish-body text-sm text-forest/60">
             What wisdom do you seek?
           </p>
         </header>
         
-        {/* Create Topic Button */}
+        {/* Search and Create Topic */}
         <div className="text-center mb-8 fade-in-up" style={{ animationDelay: '0.2s' }}>
+          <div className="max-w-md mx-auto mb-4">
+            <input
+              type="text"
+              placeholder="Search the scrolls..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="w-full px-4 py-2 rounded-md border border-gold/20 bg-white/90 text-forest placeholder-forest/50 focus:outline-none focus:ring-2 focus:ring-gold/50 text-elvish-body"
+            />
+          </div>
           <button 
             onClick={() => setIsModalOpen(true)}
             className="btn-elvish"
           >
-            ✨ Begin New Study
+            📜 New Scroll
           </button>
         </div>
         
         {/* Topics Grid */}
         <div className="max-w-6xl mx-auto">
+          {!searchQuery && (
+            <div className="text-center mb-6 fade-in-up" style={{ animationDelay: '0.3s' }}>
+              {/* <p className="text-elvish-body text-sm text-forest/60">
+                ⭐ Showing the most beloved scrolls in our garden
+              </p> */}
+            </div>
+          )}
+          
           {isLoading ? (
             <div className="text-center text-elvish-body">
-              Loading topics...
+              Loading scrolls...
             </div>
           ) : topics.length === 0 ? (
             <div className="text-center">
               <div className="card-elvish max-w-md mx-auto">
-                <h3 className="text-elvish-title text-lg mb-2">No topics yet</h3>
+                <h3 className="text-elvish-title text-lg mb-2">
+                  {searchQuery ? 'No scrolls found' : 'No scrolls yet'}
+                </h3>
                 <p className="text-elvish-body text-sm">
-                  Be the first to create a topic and start building our community of learners!
+                  {searchQuery 
+                    ? `No scrolls match "${searchQuery}". Try a different search or create a new scroll!`
+                    : 'Be the first to create a scroll and start building our community of learners!'
+                  }
                 </p>
               </div>
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {topics.map((topic, index) => (
-                <div key={topic.id} className="flow-in" style={{ animationDelay: `${0.4 + index * 0.1}s` }}>
-                  <TopicCard topic={topic} />
+            <>
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {topics.map((topic, index) => (
+                  <div key={topic.id} className="flow-in" style={{ animationDelay: `${0.4 + index * 0.1}s` }}>
+                    <TopicCard topic={topic} />
+                  </div>
+                ))}
+              </div>
+              {searchQuery && topics.length > 0 && (
+                <div className="text-center mt-6 fade-in-up">
+                  <p className="text-elvish-body text-sm text-forest/60">
+                    Found {topics.length} scroll{topics.length !== 1 ? 's' : ''} for "{searchQuery}"
+                  </p>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
         

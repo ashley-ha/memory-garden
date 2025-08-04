@@ -30,7 +30,7 @@ export function TopicCard({ topic }: TopicCardProps) {
           </Link>
           <Link href={`/topic/${topic.id}`}>
             <button className="btn-elvish bg-transparent border border-gold text-gold hover:bg-gold hover:text-forest text-xs py-2 px-3">
-              View Cards
+              View Scrolls
             </button>
           </Link>
         </div>

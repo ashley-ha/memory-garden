@@ -7,13 +7,28 @@ interface RouteParams {
 
 export async function POST(request: Request, { params }: RouteParams) {
   try {
-    const { id: cardId } = await params
-    const { userSession } = await request.json()
+    const { getServerSession } = await import('next-auth')
+    const { authOptions } = await import('@/lib/auth')
     
-    if (!cardId || !userSession) {
+    const session = await getServerSession(authOptions)
+    const { id: cardId } = await params
+    
+    if (!cardId) {
       return NextResponse.json({ 
-        error: 'Card ID and user session are required' 
+        error: 'Card ID is required' 
       }, { status: 400 })
+    }
+
+    // For voting, we use either authenticated user ID or anonymous session
+    let userId = 'anonymous'
+    if (session?.user?.id) {
+      userId = session.user.id
+    } else {
+      // For anonymous users, we'll create a temporary session
+      const { userSession } = await request.json()
+      if (userSession) {
+        userId = `anonymous_${userSession}`
+      }
     }
 
     // Check if Supabase is configured
@@ -26,10 +41,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     
     // Check if user has already voted on this card
     const { data: existingVote } = await supabase
-      .from('helpfulness')
+      .from('helpful_votes')
       .select('id')
       .eq('card_id', cardId)
-      .eq('user_session', userSession)
+      .eq('user_id', userId)
       .single()
 
     if (existingVote) {
@@ -40,10 +55,10 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     // Add the vote
     const { error: voteError } = await supabase
-      .from('helpfulness')
+      .from('helpful_votes')
       .insert([{
         card_id: cardId,
-        user_session: userSession
+        user_id: userId
       }])
 
     if (voteError) {

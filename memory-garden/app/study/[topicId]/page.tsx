@@ -178,7 +178,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                   {currentCard.content}
                 </p>
                 <div className="text-sm text-forest/60 font-inter">
-                  {currentCard.author_name ? `remembered by ${currentCard.author_name}` : 'wisdom shared anonymously'}
+                  {currentCard.author_name ? `wisdom by ${currentCard.author_name}` : 'wisdom shared anonymously'}
                 </div>
               </div>
             </div>

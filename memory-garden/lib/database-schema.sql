@@ -13,7 +13,7 @@ CREATE TABLE topics (
 CREATE TABLE cards (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   topic_id UUID REFERENCES topics(id) ON DELETE CASCADE,
-  type TEXT CHECK (type IN ('analogy', 'definition')) NOT NULL,
+  type TEXT CHECK (type IN ('analogy', 'definition', 'knowledge')) NOT NULL,
   content TEXT NOT NULL,
   author_name TEXT,
   helpful_count INTEGER DEFAULT 0,

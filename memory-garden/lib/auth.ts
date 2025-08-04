@@ -1,35 +1,54 @@
-// Auth setup commented out for MVP - using simple session-based tracking instead
-// import { NextAuthOptions } from 'next-auth'
-// import GoogleProvider from 'next-auth/providers/google'
+import { NextAuthOptions } from 'next-auth'
+import GoogleProvider from 'next-auth/providers/google'
+import { createClient } from '@/lib/supabase/server'
 
-// export const authOptions: NextAuthOptions = {
-//   providers: [
-//     GoogleProvider({
-//       clientId: process.env.GOOGLE_CLIENT_ID!,
-//       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-//     }),
-//   ],
-//   callbacks: {
-//     session: async ({ session, token }) => {
-//       if (session?.user) {
-//         (session.user as any).id = token.sub!
-//       }
-//       return session
-//     },
-//     jwt: async ({ user, token }) => {
-//       if (user) {
-//         token.uid = user.id
-//       }
-//       return token
-//     },
-//   },
-//   session: {
-//     strategy: 'jwt',
-//   },
-//   pages: {
-//     signIn: '/auth/signin',
-//   },
-// }
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string
+      email?: string | null
+      name?: string | null
+      image?: string | null
+      username?: string | null
+    }
+  }
+}
 
-// For MVP, we're using simple session-based tracking
-export const authOptions = {}
+declare module "next-auth/jwt" {
+  interface JWT {
+    username?: string | null
+  }
+}
+
+export const authOptions: NextAuthOptions = {
+  providers: process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    }),
+  ] : [],
+  callbacks: {
+    async session({ session, token }) {
+      if (session?.user) {
+        session.user.id = token.sub!
+        
+        // For now, just set username to null - we'll fetch it on the client side
+        // This prevents database calls during auth that might cause 500 errors
+        session.user.username = null
+      }
+      return session
+    },
+    async jwt({ user, token }) {
+      if (user) {
+        token.uid = user.id
+      }
+      return token
+    },
+  },
+  session: {
+    strategy: 'jwt',
+  },
+  pages: {
+    signIn: '/auth/signin',
+  },
+}

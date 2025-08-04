@@ -63,7 +63,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { topicId, type, content, authorName } = await request.json()
+    const { getServerSession } = await import('next-auth')
+    const { authOptions } = await import('@/lib/auth')
+    
+    const session = await getServerSession(authOptions)
+    const { topicId, type, content } = await request.json()
     
     if (!topicId || !type || !content) {
       return NextResponse.json({ 
@@ -77,6 +81,15 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
+    let authorId = null
+    let authorName = 'Anonymous'
+
+    // If user is authenticated, get their username
+    if (session?.user?.id) {
+      authorId = session.user.id
+      authorName = session.user.username || session.user.name?.split(' ')[0] || 'User'
+    }
+
     // Check if Supabase is configured
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
       console.log('Supabase not configured, creating mock card')
@@ -85,7 +98,8 @@ export async function POST(request: Request) {
         topic_id: topicId,
         type,
         content,
-        author_name: authorName || null,
+        author_id: authorId,
+        author_name: authorName,
         helpful_count: 0,
         created_at: new Date().toISOString()
       }
@@ -100,7 +114,8 @@ export async function POST(request: Request) {
         topic_id: topicId,
         type,
         content,
-        author_name: authorName || null
+        author_id: authorId,
+        author_name: authorName
       }])
       .select()
       .single()
@@ -113,7 +128,8 @@ export async function POST(request: Request) {
         topic_id: topicId,
         type,
         content,
-        author_name: authorName || null,
+        author_id: authorId,
+        author_name: authorName,
         helpful_count: 0,
         created_at: new Date().toISOString()
       }
