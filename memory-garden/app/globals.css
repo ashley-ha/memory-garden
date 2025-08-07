@@ -11,6 +11,14 @@
   --scroll-white: #FEFEFE;  /* card backgrounds - aged elvish scrolls */
 }
 
+@font-face {
+  font-family: 'Elvish';
+  src: url('/fonts/hobbitonbrushhand.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme inline {
   /* Rivendell Color System */
   --color-parchment: var(--parchment);
@@ -24,6 +32,7 @@
   --font-cinzel: var(--font-cinzel), serif;
   --font-crimson: var(--font-crimson), serif;
   --font-inter: var(--font-inter), sans-serif;
+  --font-elvish: 'Elvish', serif;
   
   /* Spacing for elvish elegance */
   --spacing-elvish: 1.618rem; /* Golden ratio */
@@ -31,12 +40,19 @@
 
 /* Elvish component styles */
 @layer components {
+  .font-elvish {
+    font-family: var(--font-elvish);
+  }
+  
+  .text-elvish-display {
+    @apply font-elvish text-forest font-normal text-5xl;
+  }
+  
   .card-elvish {
     @apply bg-scroll-white border border-gold/20 rounded-lg p-6 shadow-lg;
     @apply hover:shadow-xl hover:border-gold/40 transition-all duration-300;
     @apply relative overflow-hidden;
   }
-  
   .card-elvish::before {
     content: '';
     @apply absolute inset-0 bg-gradient-to-br from-gold/5 to-transparent pointer-events-none;

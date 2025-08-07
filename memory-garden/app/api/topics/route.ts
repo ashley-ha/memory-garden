@@ -1,57 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
-// Mock data for development/testing - using fixed values to avoid hydration issues
-const mockTopics = [
-  {
-    id: '1',
-    title: 'Quantum Entanglement',
-    description: 'How particles stay mysteriously connected across vast distances',
-    created_at: '2024-01-01T00:00:00.000Z',
-    card_count: 12,
-    learner_count: 247
-  },
-  {
-    id: '2', 
-    title: 'Machine Learning',
-    description: 'Teaching computers to learn and make decisions like humans',
-    created_at: '2024-01-01T00:00:00.000Z',
-    card_count: 8,
-    learner_count: 156
-  },
-  {
-    id: '3',
-    title: 'Ancient Philosophy', 
-    description: 'Timeless wisdom from great thinkers of the past',
-    created_at: '2024-01-01T00:00:00.000Z',
-    card_count: 15,
-    learner_count: 89
-  }
-]
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url)
     const search = url.searchParams.get('search') || ''
     const limit = parseInt(url.searchParams.get('limit') || '50')
-
-    // Check if Supabase is configured
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      console.log('Supabase not configured, using mock data')
-      let filteredTopics = mockTopics
-      
-      if (search) {
-        filteredTopics = mockTopics.filter(topic => 
-          topic.title.toLowerCase().includes(search.toLowerCase()) ||
-          topic.description.toLowerCase().includes(search.toLowerCase())
-        )
-      }
-      
-      // Sort by popularity (card_count + learner_count)
-      filteredTopics.sort((a, b) => (b.card_count + b.learner_count) - (a.card_count + a.learner_count))
-      
-      return NextResponse.json(filteredTopics.slice(0, limit))
-    }
 
     const supabase = await createClient()
     
@@ -68,7 +23,7 @@ export async function GET(request: Request) {
 
     if (error) {
       console.error('Database error:', error)
-      return NextResponse.json(mockTopics.slice(0, limit)) // Fallback to mock data
+      return NextResponse.json({ error: 'Failed to fetch topics' }, { status: 500 })
     }
 
     // Get card counts and calculate popularity
@@ -79,7 +34,7 @@ export async function GET(request: Request) {
           .select('*', { count: 'exact', head: true })
           .eq('topic_id', topic.id)
 
-        // Get unique learner count from reviews for this topic's cards
+        // Get unique learner count from real user interactions for this topic's cards
         const { data: cardIds } = await supabase
           .from('cards')
           .select('id')
@@ -87,17 +42,36 @@ export async function GET(request: Request) {
 
         let learnerCount = 0
         if (cardIds && cardIds.length > 0) {
+          // Get users who have studied cards (reviews)
           const { data: reviews } = await supabase
             .from('reviews')
-            .select('user_session')
+            .select('user_id')
             .in('card_id', cardIds.map(c => c.id))
 
-          // Count unique user sessions
-          const uniqueSessions = new Set(reviews?.map(r => r.user_session) || [])
-          learnerCount = uniqueSessions.size
+          // Get users who have marked cards as helpful
+          const { data: helpfulVotes } = await supabase
+            .from('helpful_votes')
+            .select('user_id')
+            .in('card_id', cardIds.map(c => c.id))
+
+          // Get users who have contributed cards to this topic
+          const { data: cardContributors } = await supabase
+            .from('cards')
+            .select('author_id')
+            .eq('topic_id', topic.id)
+            .not('author_id', 'is', null)
+
+          // Combine all unique user sessions/IDs
+          const allUserSessions = new Set([
+            ...(reviews?.map(r => r.user_id) || []),
+            ...(helpfulVotes?.map(v => v.user_id) || []),
+            ...(cardContributors?.map(c => c.author_id) || [])
+          ])
+
+          learnerCount = allUserSessions.size
         }
 
-        const finalLearnerCount = learnerCount || (25 + (parseInt(topic.id.replace(/-/g, '').slice(0, 8), 16) % 150))
+        const finalLearnerCount = learnerCount
 
         return {
           ...topic,
@@ -113,73 +87,75 @@ export async function GET(request: Request) {
       .sort((a, b) => b.popularity_score - a.popularity_score)
       .slice(0, limit)
 
+    // Debug: Log first topic to check author_id
+    if (sortedTopics.length > 0) {
+      console.log('First topic from DB:', {
+        title: sortedTopics[0].title,
+        author_id: sortedTopics[0].author_id,
+        hasAuthorId: !!sortedTopics[0].author_id
+      })
+    }
+
     return NextResponse.json(sortedTopics)
   } catch (error) {
     console.error('API error:', error)
-    return NextResponse.json(mockTopics.slice(0, 6)) // Fallback to mock data with limit
+    return NextResponse.json({ error: 'Failed to fetch topics' }, { status: 500 })
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const { title, description } = await request.json()
+    const { getServerSession } = await import('next-auth')
+    const { authOptions } = await import('@/lib/auth')
+    
+    const session = await getServerSession(authOptions)
+    const { title, description, isAnonymous, userSession } = await request.json()
     
     if (!title) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
 
-    // Check if Supabase is configured
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      console.log('Supabase not configured, creating mock topic')
-      const mockTopic = {
-        id: Date.now().toString(),
-        title,
-        description,
-        created_at: new Date().toISOString(),
-        card_count: 0,
-        learner_count: 25 // Fixed learner count for new topics
-      }
-      return NextResponse.json(mockTopic)
+    let authorId = null
+    let finalAuthorName = null
+
+    // If user is authenticated, use their info
+    if (session?.user?.id) {
+      authorId = session.user.id
+      finalAuthorName = isAnonymous ? null : (session.user.name?.split(' ')[0] || 'User')
+    } else {
+      // For anonymous users, use session ID from request
+      authorId = userSession || 'anonymous'
+      // Anonymous users don't get a name displayed, but can still delete
+      finalAuthorName = null
     }
+
+
 
     const supabase = await createClient()
     
     const { data, error } = await supabase
       .from('topics')
-      .insert([{ title, description }])
+      .insert([{ 
+        title, 
+        description,
+        author_id: authorId,
+        author_name: finalAuthorName
+      }])
       .select()
       .single()
 
     if (error) {
       console.error('Database error:', error)
-      // Fallback to mock topic
-      const mockTopic = {
-        id: Date.now().toString(),
-        title,
-        description,
-        created_at: new Date().toISOString(), 
-        card_count: 0,
-        learner_count: 25 // Fixed learner count for fallback topics
-      }
-      return NextResponse.json(mockTopic)
+      return NextResponse.json({ error: 'Failed to create topic' }, { status: 500 })
     }
 
     return NextResponse.json({
       ...data,
       card_count: 0,
-      learner_count: 25 // Fixed learner count for new topics
+      learner_count: 0 // Real learner count for new topics (starts at 0)
     })
   } catch (error) {
     console.error('API error:', error)
-    // Fallback to mock topic
-    const mockTopic = {
-      id: Date.now().toString(),
-      title: 'Mock Topic',
-      description: 'This is a mock topic created when database is unavailable',
-      created_at: new Date().toISOString(),
-      card_count: 0,
-      learner_count: 25 // Fixed learner count for error fallback
-    }
-    return NextResponse.json(mockTopic)
+    return NextResponse.json({ error: 'Failed to create topic' }, { status: 500 })
   }
 }

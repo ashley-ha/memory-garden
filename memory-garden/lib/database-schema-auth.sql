@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 -- Update the cards table to link to authenticated users
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS author_id VARCHAR(255);
 
+-- Update the topics table to link to authenticated users
+ALTER TABLE topics ADD COLUMN IF NOT EXISTS author_id VARCHAR(255);
+ALTER TABLE topics ADD COLUMN IF NOT EXISTS author_name TEXT;
+
 -- Create RPC function to check username availability
 CREATE OR REPLACE FUNCTION check_username_availability(username_to_check TEXT)
 RETURNS BOOLEAN AS $$

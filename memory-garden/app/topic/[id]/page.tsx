@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { Topic, Card } from '@/lib/types'
+import { isUserContent } from '@/lib/user'
+import { getOrCreateSessionId } from '@/lib/simple-session'
 
 interface TopicPageProps {
   params: Promise<{ id: string }>
@@ -141,7 +144,11 @@ export default function TopicPage({ params }: TopicPageProps) {
                     </h3>
                     <div className="grid gap-4 md:grid-cols-2">
                       {typeCards.map((card) => (
-                        <CardDisplay key={card.id} card={card} />
+                        <CardDisplay 
+                          key={card.id} 
+                          card={card} 
+                          onCardDeleted={() => fetchTopicData(topic.id)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -162,20 +169,44 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
 }) {
   const [type, setType] = useState<'analogy' | 'definition' | 'knowledge'>('analogy')
   const [content, setContent] = useState('')
+  const [sources, setSources] = useState('')
+  const [isAnonymous, setIsAnonymous] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const { data: session } = useSession()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
 
     try {
+      // Get the session ID to send to the API
+      const userSession = getOrCreateSessionId()
+
+      // Parse sources from textarea (one URL per line)
+      const sourceUrls = sources
+        .split('\n')
+        .map(url => url.trim())
+        .filter(url => url.length > 0)
+        .filter(url => {
+          // Basic URL validation
+          try {
+            new URL(url)
+            return true
+          } catch {
+            return false
+          }
+        })
+
       const response = await fetch('/api/cards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topicId,
           type,
-          content
+          content,
+          sources: sourceUrls.length > 0 ? sourceUrls : null,
+          isAnonymous,
+          userSession
         })
       })
 
@@ -255,6 +286,48 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
         />
       </div>
 
+      {/* Sources field - only show for definition and knowledge cards */}
+      {(type === 'definition' || type === 'knowledge') && (
+        <div>
+          <label className="block text-sm font-medium text-forest mb-1">
+            Sources <span className="text-forest/60 text-xs">(optional)</span>
+          </label>
+          <textarea
+            value={sources}
+            onChange={(e) => setSources(e.target.value)}
+            className="input-elvish w-full h-20 resize-none"
+            placeholder="Add source URLs, one per line:
+https://example.com/article
+https://wikipedia.org/wiki/topic"
+          />
+          <p className="text-xs text-forest/60 mt-1">
+            Add links to articles, papers, or resources that support this {type}. One URL per line.
+          </p>
+        </div>
+      )}
+
+      <div>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={isAnonymous}
+            onChange={(e) => setIsAnonymous(e.target.checked)}
+            className="rounded border-gold/30 text-gold focus:ring-gold/50"
+          />
+          <span className="text-sm font-medium text-forest">
+            Share anonymously
+          </span>
+        </label>
+        <p className="text-xs text-forest/60 mt-1">
+          {session ? (
+            isAnonymous 
+              ? "This card will be shared anonymously. You can still delete it later."
+              : `This card will be credited to "${session.user?.name || 'You'}". You can delete it later.`
+          ) : (
+            "You're browsing anonymously. You can still delete content you create."
+          )}
+        </p>
+      </div>
 
       <div className="flex space-x-3">
         <button 
@@ -277,25 +350,30 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
   )
 }
 
-function CardDisplay({ card }: { card: Card }) {
+function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () => void }) {
   const [hasVoted, setHasVoted] = useState(false)
   const [helpfulCount, setHelpfulCount] = useState(card.helpful_count)
   const [isVoting, setIsVoting] = useState(false)
   const [showSparkle, setShowSparkle] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showSources, setShowSources] = useState(false)
+
+  // Check if current user can delete this card
+  const canDelete = () => {
+    if (typeof window === 'undefined') return false
+    
+    // Use the new user system to check if user created this card
+    return isUserContent(card.author_id || null)
+  }
 
   const handleVote = async () => {
     if (hasVoted || isVoting) return
     
     setIsVoting(true)
     try {
-      // Simple session generation for anonymous users
-      let userSession = 'anonymous'
-      if (typeof window !== 'undefined') {
-        userSession = localStorage.getItem('memory-garden-session') || crypto.randomUUID()
-        if (!localStorage.getItem('memory-garden-session')) {
-          localStorage.setItem('memory-garden-session', userSession)
-        }
-      }
+      // Use centralized session management
+      const userSession = getOrCreateSessionId()
       
       const response = await fetch(`/api/cards/${card.id}/vote`, {
         method: 'POST',
@@ -323,22 +401,95 @@ function CardDisplay({ card }: { card: Card }) {
     }
   }
 
+  const handleDelete = async () => {
+    if (isDeleting) return
+    
+    setIsDeleting(true)
+    try {
+      // Use centralized session management
+      const userSession = getOrCreateSessionId()
+
+      const response = await fetch(`/api/cards/${card.id}/delete`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userSession })
+      })
+
+      if (response.ok) {
+        onCardDeleted() // Refresh the cards list
+        setShowDeleteConfirm(false)
+      } else {
+        const error = await response.json()
+        alert(error.error || 'Failed to delete card')
+      }
+    } catch (error) {
+      console.error('Failed to delete card:', error)
+      alert('Failed to delete card. Please try again.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   return (
     <div className="card-elvish">
       <div className="flex items-start justify-between mb-3">
         <span className="text-xs font-inter px-2 py-1 bg-gold/20 text-gold rounded capitalize">
           {card.type}
         </span>
-        <div className="text-xs text-forest/60 font-inter">
-          {helpfulCount} found helpful
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-forest/60 font-inter">
+            {helpfulCount} found helpful
+          </div>
+          {canDelete() && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="text-xs px-2 py-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+              title="Delete this scroll"
+            >
+              🗑️
+            </button>
+          )}
         </div>
       </div>
       
       <p className="text-elvish-body mb-4">{card.content}</p>
       
+      {/* Sources display */}
+      {showSources && card.sources && card.sources.length > 0 && (
+        <div className="mb-4 p-3 bg-gold/5 border border-gold/20 rounded">
+          <h4 className="text-xs font-medium text-forest mb-2">Sources:</h4>
+          <div className="space-y-1">
+            {card.sources.map((source, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <span className="text-xs text-gold">🔗</span>
+                <a 
+                  href={source}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-forest hover:text-gold underline hover:no-underline break-all"
+                >
+                  {source}
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
       <div className="flex items-center justify-between">
-        <div className="text-xs text-forest/60 font-inter">
-          {card.author_name ? `shared by ${card.author_name}` : 'shared anonymously'}
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-forest/60 font-inter">
+            {card.author_name ? `shared by ${card.author_name}` : 'shared anonymously'}
+          </div>
+          {/* Show sources button for definition and knowledge cards with sources */}
+          {card.sources && card.sources.length > 0 && (card.type === 'definition' || card.type === 'knowledge') && (
+            <button
+              onClick={() => setShowSources(!showSources)}
+              className="text-xs px-2 py-1 bg-gold/10 text-gold hover:bg-gold/20 rounded transition-colors"
+            >
+              📜 View Sources
+            </button>
+          )}
         </div>
         <button
           onClick={handleVote}
@@ -352,6 +503,34 @@ function CardDisplay({ card }: { card: Card }) {
           {isVoting ? 'Voting...' : hasVoted ? '⭐ Helpful!' : 'Mark Helpful'}
         </button>
       </div>
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-parchment p-6 rounded-lg border border-gold/30 max-w-md mx-4">
+            <h3 className="text-elvish-title text-lg mb-4">Delete Scroll?</h3>
+            <p className="text-elvish-body text-sm mb-6">
+              Are you sure you want to delete this scroll? This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="btn-elvish bg-transparent border border-gold text-gold hover:bg-gold hover:text-forest"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="btn-elvish bg-red-600 hover:bg-red-700 text-white border-red-600"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

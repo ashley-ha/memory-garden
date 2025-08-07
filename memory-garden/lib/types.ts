@@ -4,6 +4,8 @@ export interface Topic {
   id: string
   title: string
   description: string | null
+  author_id: string | null
+  author_name: string | null
   created_at: string
 }
 
@@ -12,14 +14,16 @@ export interface Card {
   topic_id: string
   type: 'analogy' | 'definition' | 'knowledge'
   content: string
+  author_id: string | null
   author_name: string | null
   helpful_count: number
+  sources: string[] | null  // Array of source URLs for definition and knowledge cards
   created_at: string
 }
 
 export interface Review {
   id: string
-  user_session: string
+  user_id: string
   card_id: string
   rating: 'again' | 'hard' | 'good' | 'easy'
   next_review: string
@@ -28,7 +32,7 @@ export interface Review {
 
 export interface HelpfulVote {
   id: string
-  user_session: string
+  user_id: string
   card_id: string
   created_at: string
 }
@@ -41,4 +45,10 @@ export interface TopicWithStats extends Topic {
 
 export interface CardWithTopic extends Card {
   topic: Topic
+}
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  avatar_url: string | null;
 }

@@ -208,19 +208,19 @@ export default function StudyPage({ params }: StudyPageProps) {
                     </button>
                     <button 
                       onClick={() => handleRating('hard')}
-                      className="btn-elvish bg-bronze/70 text-white hover:bg-bronze/80 text-sm py-2"
+                      className="btn-elvish bg-elvish-body/80 text-white hover:bg-elvish-body/90 text-sm py-2"
                     >
                       Hard
                     </button>
                     <button 
                       onClick={() => handleRating('good')}
-                      className="btn-elvish bg-sage text-white hover:bg-sage/90 text-sm py-2"
+                      className="btn-elvish bg-forest text-white hover:bg-forest/90 text-sm py-2"
                     >
                       Good
                     </button>
                     <button 
                       onClick={() => handleRating('easy')}
-                      className="btn-elvish bg-sage/80 text-white hover:bg-sage/90 text-sm py-2"
+                      className="btn-elvish bg-sage text-white hover:bg-sage/90 text-sm py-2"
                     >
                       Easy
                     </button>

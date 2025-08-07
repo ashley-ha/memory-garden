@@ -1,28 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
-// Mock data for development/testing
-const mockCards = [
-  {
-    id: '1',
-    topic_id: '1',
-    type: 'analogy',
-    content: "It's like two dancers who practiced together for years. Even when they're in separate rooms, they move in perfect synchronization, as if connected by invisible threads.",
-    author_name: 'Emma',
-    helpful_count: 127,
-    created_at: '2024-01-01T00:00:00.000Z'
-  },
-  {
-    id: '2',
-    topic_id: '1',
-    type: 'definition',
-    content: 'When two particles share a quantum state and measuring one instantly affects the other, regardless of the distance between them.',
-    author_name: 'Marcus',
-    helpful_count: 89,
-    created_at: '2024-01-01T00:00:00.000Z'
-  }
-]
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -30,13 +8,6 @@ export async function GET(request: Request) {
     
     if (!topicId) {
       return NextResponse.json({ error: 'Topic ID is required' }, { status: 400 })
-    }
-
-    // Check if Supabase is configured
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      console.log('Supabase not configured, using mock cards')
-      const filteredMockCards = mockCards.filter(card => card.topic_id === topicId)
-      return NextResponse.json(filteredMockCards)
     }
 
     const supabase = await createClient()
@@ -49,9 +20,7 @@ export async function GET(request: Request) {
 
     if (error) {
       console.error('Database error:', error)
-      // Fallback to mock data
-      const filteredMockCards = mockCards.filter(card => card.topic_id === topicId)
-      return NextResponse.json(filteredMockCards)
+      return NextResponse.json({ error: 'Failed to fetch cards' }, { status: 500 })
     }
 
     return NextResponse.json(cards || [])
@@ -67,7 +36,7 @@ export async function POST(request: Request) {
     const { authOptions } = await import('@/lib/auth')
     
     const session = await getServerSession(authOptions)
-    const { topicId, type, content } = await request.json()
+    const { topicId, type, content, sources, isAnonymous, userSession } = await request.json()
     
     if (!topicId || !type || !content) {
       return NextResponse.json({ 
@@ -75,35 +44,24 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    if (!['analogy', 'definition'].includes(type)) {
+    if (!['analogy', 'definition', 'knowledge'].includes(type)) {
       return NextResponse.json({ 
-        error: 'Type must be either "analogy" or "definition"' 
+        error: 'Type must be "analogy", "definition", or "knowledge"' 
       }, { status: 400 })
     }
 
     let authorId = null
-    let authorName = 'Anonymous'
+    let finalAuthorName = null
 
-    // If user is authenticated, get their username
+    // If user is authenticated, use their info
     if (session?.user?.id) {
       authorId = session.user.id
-      authorName = session.user.username || session.user.name?.split(' ')[0] || 'User'
-    }
-
-    // Check if Supabase is configured
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      console.log('Supabase not configured, creating mock card')
-      const mockCard = {
-        id: Date.now().toString(),
-        topic_id: topicId,
-        type,
-        content,
-        author_id: authorId,
-        author_name: authorName,
-        helpful_count: 0,
-        created_at: new Date().toISOString()
-      }
-      return NextResponse.json(mockCard)
+      finalAuthorName = isAnonymous ? null : (session.user.name?.split(' ')[0] || 'User')
+    } else {
+      // For anonymous users, use session ID from request
+      authorId = userSession || 'anonymous'
+      // Anonymous users don't get a name displayed, but can still delete
+      finalAuthorName = null
     }
 
     const supabase = await createClient()
@@ -114,26 +72,16 @@ export async function POST(request: Request) {
         topic_id: topicId,
         type,
         content,
+        sources: sources || null,
         author_id: authorId,
-        author_name: authorName
+        author_name: finalAuthorName
       }])
       .select()
       .single()
 
     if (error) {
       console.error('Database error:', error)
-      // Fallback to mock card
-      const mockCard = {
-        id: Date.now().toString(),
-        topic_id: topicId,
-        type,
-        content,
-        author_id: authorId,
-        author_name: authorName,
-        helpful_count: 0,
-        created_at: new Date().toISOString()
-      }
-      return NextResponse.json(mockCard)
+      return NextResponse.json({ error: 'Failed to create card' }, { status: 500 })
     }
 
     return NextResponse.json({

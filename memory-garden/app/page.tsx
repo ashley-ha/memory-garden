@@ -5,6 +5,8 @@ import { TopicCard } from '@/components/TopicCard'
 import { CreateTopicModal } from '@/components/CreateTopicModal'
 import { UserMenu } from '@/components/UserMenu'
 import { TopicWithStats } from '@/lib/types'
+import { getOrCreateSessionId } from '@/lib/simple-session'
+import { TbArrowLeftRhombus } from "react-icons/tb"
 
 export default function Home() {
   const [topics, setTopics] = useState<TopicWithStats[]>([])
@@ -12,13 +14,15 @@ export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showAllTopics, setShowAllTopics] = useState(false)
 
-  const fetchTopics = async (search = '') => {
+  const fetchTopics = async (search = '', showAll = false) => {
     try {
       setIsLoading(true)
       const params = new URLSearchParams()
       if (search) params.append('search', search)
-      params.append('limit', '6') // Limit to top 6 scrolls
+      // Only limit to 6 if we're not showing all topics
+      if (!showAll) params.append('limit', '6')
       
       const response = await fetch(`/api/topics?${params}`)
       if (response.ok) {
@@ -34,20 +38,49 @@ export default function Home() {
 
   const handleSearch = (query: string) => {
     setSearchQuery(query)
-    fetchTopics(query)
+    setShowAllTopics(false) // Reset to showing limited topics when searching
+    fetchTopics(query, false)
   }
 
-  const handleCreateTopic = async (title: string, description: string) => {
+  const handleShowMoreScrolls = () => {
+    setShowAllTopics(true)
+    fetchTopics(searchQuery, true)
+  }
+
+  const handleCreateTopic = async (title: string, description: string, isAnonymous?: boolean) => {
+    // Use centralized session management
+    const userSession = getOrCreateSessionId()
+
     const response = await fetch('/api/topics', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description })
+      body: JSON.stringify({ title, description, isAnonymous, userSession })
     })
 
     if (response.ok) {
-      fetchTopics(searchQuery) // Refresh the list with current search
+      fetchTopics(searchQuery, showAllTopics) // Refresh the list with current search and view state
     } else {
       throw new Error('Failed to create topic')
+    }
+  }
+
+  const handleDeleteTopic = async (topicId: string) => {
+    // Note: This won't work for authenticated users from homepage context
+    // because we don't have session access here. The delete should work
+    // from TopicCard component which has session access
+    const userSession = getOrCreateSessionId()
+
+    const response = await fetch(`/api/topics/${topicId}/delete`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userSession })
+    })
+
+    if (response.ok) {
+      fetchTopics(searchQuery, showAllTopics) // Refresh the list
+    } else {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to delete topic')
     }
   }
 
@@ -78,9 +111,10 @@ export default function Home() {
         
         {/* Header */}
         <header className="text-center mb-12 fade-in-up">
-          <h1 className="text-elvish-title text-4xl mb-4">
+          <h1 className="font-elvish text-6xl mb-4">
             Memory Garden
           </h1>
+          <a href="https://www.fontspace.com/category/lord-of-the-rings"><img src="https://see.fontimg.com/api/rf5/6PPo/NWNmOTE3OTc0ZmFkNDBlNmE0Mzk4ODlmMmU0MWU2MGEudHRm/TWVtb3J5IEdhcmRlbg/elvish.png?r=fs&h=130&w=2000&fg=000000&bg=FFFFFF&tb=1&s=65" alt="Lord of the Rings fonts" className="w-1/5 mx-auto" /></a>
           <p className="text-elvish-body text-sm text-forest/60">
             What wisdom do you seek?
           </p>
@@ -91,7 +125,7 @@ export default function Home() {
           <div className="max-w-md mx-auto mb-4">
             <input
               type="text"
-              placeholder="Search the scrolls..."
+              placeholder="Search the scrolls of knowledge..."
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               className="w-full px-4 py-2 rounded-md border border-gold/20 bg-white/90 text-forest placeholder-forest/50 focus:outline-none focus:ring-2 focus:ring-gold/50 text-elvish-body"
@@ -99,7 +133,7 @@ export default function Home() {
           </div>
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="btn-elvish"
+            className="btn-elvish font-elvish bg-gold/50 text-forest hover:bg-gold/90 transition-all duration-200 p-4"
           >
             📜 New Scroll
           </button>
@@ -107,8 +141,13 @@ export default function Home() {
         
         {/* Topics Grid */}
         <div className="max-w-6xl mx-auto">
+          {/* Community Scrolls Header */}
+          <div className="text-center mb-8 fade-in-up" style={{ animationDelay: '0.3s' }}>
+            <h2 className="text-elvish-title text-3xl mb-2">Community Scrolls</h2>
+          </div>
+          
           {!searchQuery && (
-            <div className="text-center mb-6 fade-in-up" style={{ animationDelay: '0.3s' }}>
+            <div className="text-center mb-6 fade-in-up" style={{ animationDelay: '0.4s' }}>
               {/* <p className="text-elvish-body text-sm text-forest/60">
                 ⭐ Showing the most beloved scrolls in our garden
               </p> */}
@@ -138,10 +177,24 @@ export default function Home() {
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {topics.map((topic, index) => (
                   <div key={topic.id} className="flow-in" style={{ animationDelay: `${0.4 + index * 0.1}s` }}>
-                    <TopicCard topic={topic} />
+                    <TopicCard topic={topic} onDelete={handleDeleteTopic} />
                   </div>
                 ))}
               </div>
+              
+              {/* Show "More Scrolls" button only when not searching and not showing all topics */}
+              {!searchQuery && !showAllTopics && topics.length === 6 && (
+                <div className="text-center mt-8 fade-in-up">
+                  <button 
+                    onClick={handleShowMoreScrolls}
+                    className="btn-elvish font-elvish bg-gold/30 text-forest hover:bg-gold/60 transition-all duration-300 p-3 flex items-center gap-2 mx-auto"
+                  >
+                    <TbArrowLeftRhombus className="text-lg rotate-90" />
+                    More Scrolls
+                  </button>
+                </div>
+              )}
+              
               {searchQuery && topics.length > 0 && (
                 <div className="text-center mt-6 fade-in-up">
                   <p className="text-elvish-body text-sm text-forest/60">

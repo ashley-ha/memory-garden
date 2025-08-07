@@ -1,17 +1,20 @@
 'use client'
 
 import { useState } from 'react'
+import { useSession } from 'next-auth/react'
 
 interface CreateTopicModalProps {
   isOpen: boolean
   onClose: () => void
-  onSubmit: (title: string, description: string) => Promise<void>
+  onSubmit: (title: string, description: string, isAnonymous?: boolean) => Promise<void>
 }
 
 export function CreateTopicModal({ isOpen, onClose, onSubmit }: CreateTopicModalProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [isAnonymous, setIsAnonymous] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const { data: session } = useSession()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -19,9 +22,10 @@ export function CreateTopicModal({ isOpen, onClose, onSubmit }: CreateTopicModal
 
     setIsSubmitting(true)
     try {
-      await onSubmit(title.trim(), description.trim())
+      await onSubmit(title.trim(), description.trim(), isAnonymous)
       setTitle('')
       setDescription('')
+      setIsAnonymous(false)
       onClose()
     } catch (error) {
       console.error('Failed to create topic:', error)
@@ -63,6 +67,29 @@ export function CreateTopicModal({ isOpen, onClose, onSubmit }: CreateTopicModal
               placeholder="Briefly describe what this topic covers..."
             />
           </div>
+
+          <div>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={isAnonymous}
+                onChange={(e) => setIsAnonymous(e.target.checked)}
+                className="rounded border-gold/30 text-gold focus:ring-gold/50"
+              />
+              <span className="text-sm font-medium text-forest">
+                Create anonymously
+              </span>
+            </label>
+            <p className="text-xs text-forest/60 mt-1">
+              {session ? (
+                isAnonymous 
+                  ? "This topic will be shared anonymously. You can still delete it later."
+                  : `This topic will be credited to "${session.user?.name || 'You'}". You can delete it later.`
+              ) : (
+                "You're browsing anonymously. You can still delete content you create."
+              )}
+            </p>
+          </div>
           
           <div className="flex space-x-3">
             <button
@@ -77,6 +104,7 @@ export function CreateTopicModal({ isOpen, onClose, onSubmit }: CreateTopicModal
               onClick={() => {
                 setTitle('')
                 setDescription('')
+                setIsAnonymous(false)
                 onClose()
               }}
               className="btn-elvish bg-transparent border border-gold text-gold hover:bg-gold hover:text-forest flex-1"

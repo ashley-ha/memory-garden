@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Cinzel, Crimson_Text, Inter } from "next/font/google";
 import { SessionProvider } from '@/components/SessionProvider'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { Footer } from '@/components/Footer'
 import "./globals.css";
 
 const cinzel = Cinzel({
@@ -23,8 +25,26 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Memory Garden",
-  description: "Collaborative flashcards that don't suck - learn together with spaced repetition",
+  title: "Memory Garden - Collaborative Learning with Spaced Repetition",
+  description: "Learn together with beautiful flashcards. Create and study topics collaboratively using proven spaced repetition techniques. Join our community of learners.",
+  keywords: "flashcards, spaced repetition, collaborative learning, study together, memory techniques",
+  authors: [{ name: "Memory Garden Team" }],
+  openGraph: {
+    title: "Memory Garden - Collaborative Learning",
+    description: "Beautiful flashcards that don't suck. Learn together with spaced repetition.",
+    type: "website",
+    locale: "en_US",
+    siteName: "Memory Garden",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Memory Garden",
+    description: "Collaborative flashcards with spaced repetition",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({
@@ -34,10 +54,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${cinzel.variable} ${crimsonText.variable} ${inter.variable}`} suppressHydrationWarning>
-      <body className="bg-parchment text-forest font-crimson antialiased">
-        <SessionProvider>
-          {children}
-        </SessionProvider>
+      <body className="bg-parchment text-forest font-crimson antialiased min-h-screen flex flex-col">
+        <ErrorBoundary>
+          <SessionProvider>
+            <div className="flex-grow">
+              {children}
+            </div>
+            <Footer />
+          </SessionProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

@@ -3,6 +3,7 @@
 import { useSession, signIn, signOut } from 'next-auth/react'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 export function UserMenu() {
   const { data: session, status } = useSession()
@@ -100,6 +101,16 @@ export function UserMenu() {
           </div>
           
           <div className="py-2">
+            <Link href="/my-scrolls" onClick={() => setIsOpen(false)}>
+              <button className="w-full text-left px-4 py-2 text-sm font-inter text-forest hover:bg-gold/10 transition-colors">
+                My Scrolls
+              </button>
+            </Link>
+            <Link href="/settings" onClick={() => setIsOpen(false)}>
+              <button className="w-full text-left px-4 py-2 text-sm font-inter text-forest hover:bg-gold/10 transition-colors">
+                Settings
+              </button>
+            </Link>
             <button
               onClick={() => {
                 setIsOpen(false)
