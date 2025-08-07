@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { createInvalidationResponse } from '@/lib/api-cache'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -36,10 +37,10 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 
     const supabase = await createClient()
     
-    // First check if the card exists and get its author info
+    // First check if the card exists and get its author info and topic_id
     const { data: card, error: fetchError } = await supabase
       .from('cards')
-      .select('author_id, author_name')
+      .select('author_id, author_name, topic_id')
       .eq('id', cardId)
       .single()
 
@@ -67,7 +68,11 @@ export async function DELETE(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: 'Failed to delete card' }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true })
+    // Return response with cache invalidation
+    return createInvalidationResponse(
+      { success: true }, 
+      [`cards-topic-${card.topic_id}`, 'cards']
+    )
   } catch (error) {
     console.error('API error:', error)
     return NextResponse.json({ error: 'Failed to process delete request' }, { status: 500 })

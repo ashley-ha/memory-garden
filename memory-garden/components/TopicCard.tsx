@@ -7,9 +7,11 @@ import { useSession } from 'next-auth/react'
 interface TopicCardProps {
   topic: TopicWithStats
   onDelete?: (topicId: string) => Promise<void>
+  savedTopicIds?: string[]
+  onSavedTopicsUpdate?: () => void
 }
 
-export function TopicCard({ topic, onDelete }: TopicCardProps) {
+export function TopicCard({ topic, onDelete, savedTopicIds = [], onSavedTopicsUpdate }: TopicCardProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [canDeleteState, setCanDeleteState] = useState(false)
@@ -37,19 +39,14 @@ export function TopicCard({ topic, onDelete }: TopicCardProps) {
     }
   }, [topic.author_id, session])
 
-  // Check if topic is saved
+  // Update saved status based on props
   useEffect(() => {
-    if (session?.user?.id) {
-      fetch('/api/saved-topics')
-        .then(res => res.json())
-        .then(data => {
-          if (data.topicIds && data.topicIds.includes(topic.id)) {
-            setIsSaved(true)
-          }
-        })
-        .catch(err => console.error('Failed to check saved status:', err))
+    if (session?.user?.id && savedTopicIds) {
+      setIsSaved(savedTopicIds.includes(topic.id))
+    } else {
+      setIsSaved(false)
     }
-  }, [session, topic.id])
+  }, [session?.user?.id, savedTopicIds, topic.id])
 
   const handleDelete = async () => {
     if (isDeleting) return
@@ -111,6 +108,8 @@ export function TopicCard({ topic, onDelete }: TopicCardProps) {
       
       if (response.ok) {
         setIsSaved(!isSaved)
+        // Notify parent to refresh the centralized saved topics
+        onSavedTopicsUpdate?.()
       } else {
         throw new Error('Failed to update saved status')
       }

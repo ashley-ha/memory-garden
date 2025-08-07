@@ -31,10 +31,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session?.user) {
         session.user.id = token.sub!
-        
-        // For now, just set username to null - we'll fetch it on the client side
-        // This prevents database calls during auth that might cause 500 errors
-        session.user.username = null
+        session.user.username = token.username || null
       }
       return session
     },

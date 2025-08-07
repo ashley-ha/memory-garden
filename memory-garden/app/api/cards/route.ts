@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { canCreateCard } from '@/lib/subscription'
+import { createCachedResponse, createInvalidationResponse } from '@/lib/api-cache'
 
 export async function GET(request: Request) {
   try {
@@ -42,7 +43,12 @@ export async function GET(request: Request) {
       }))
     }
 
-    return NextResponse.json(cardsWithDeckStatus)
+    // Return cached response with better cache headers
+    return createCachedResponse(cardsWithDeckStatus, {
+      ttl: 60, // 1 minute
+      staleWhileRevalidate: 300, // 5 minutes
+      tags: [`cards-topic-${topicId}`, 'cards']
+    })
   } catch (error) {
     console.error('API error:', error)
     return NextResponse.json({ error: 'Failed to fetch cards' }, { status: 500 })
@@ -162,10 +168,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to create card' }, { status: 500 })
     }
 
-    return NextResponse.json({
+    // Return response with cache invalidation
+    return createInvalidationResponse({
       ...data,
       helpful_count: 0 // New cards start with 0 helpful votes
-    })
+    }, [`cards-topic-${topicId}`, 'cards'])
   } catch (error) {
     console.error('API error:', error)
     return NextResponse.json({ error: 'Failed to create card' }, { status: 500 })

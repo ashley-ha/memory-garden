@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { TopicCard } from '@/components/TopicCard'
 import { CreateTopicModal } from '@/components/CreateTopicModal'
 import { UserMenu } from '@/components/UserMenu'
@@ -8,35 +8,72 @@ import { TopicGridSkeleton } from '@/components/TopicCardSkeleton'
 import { TopicWithStats } from '@/lib/types'
 import { getOrCreateSessionId } from '@/lib/simple-session'
 import { TbArrowLeftRhombus } from "react-icons/tb"
+import { useCache, invalidateCache } from '@/lib/hooks/use-cache'
+import { useSession } from 'next-auth/react'
 
 export default function Home() {
-  const [topics, setTopics] = useState<TopicWithStats[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showAllTopics, setShowAllTopics] = useState(false)
   const [searchTimeoutId, setSearchTimeoutId] = useState<NodeJS.Timeout | null>(null)
+  const { data: session } = useSession()
 
-  const fetchTopics = async (search = '', showAll = false) => {
-    try {
-      setIsLoading(true)
-      const params = new URLSearchParams()
-      if (search) params.append('search', search)
-      // Only limit to 6 if we're not showing all topics
-      if (!showAll) params.append('limit', '6')
-      
-      const response = await fetch(`/api/topics?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setTopics(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch topics:', error)
-    } finally {
-      setIsLoading(false)
+  // Cached topics fetcher
+  const topicsFetcher = useCallback(async () => {
+    const params = new URLSearchParams()
+    if (searchQuery) params.append('search', searchQuery)
+    if (!showAllTopics) params.append('limit', '6')
+    
+    const response = await fetch(`/api/topics?${params}`)
+    if (!response.ok) throw new Error('Failed to fetch topics')
+    
+    return response.json()
+  }, [searchQuery, showAllTopics])
+
+  // Use cached topics data with localStorage persistence
+  const {
+    data: topics = [],
+    isLoading,
+    refresh: refreshTopics
+  } = useCache(
+    `topics-${searchQuery}-${showAllTopics}`,
+    topicsFetcher,
+    { 
+      ttl: 120000, // 2 minutes fresh
+      staleWhileRevalidate: 600000, // 10 minutes stale
+      persistToLocalStorage: true // Persist across page reloads
     }
-  }
+  )
+
+  // Fetch saved topics centrally (only once for all cards)
+  const savedTopicsFetcher = useCallback(async () => {
+    if (!session?.user?.id) return []
+    
+    const response = await fetch('/api/saved-topics')
+    if (!response.ok) return []
+    
+    const data = await response.json()
+    return data.topicIds || []
+  }, [session?.user?.id])
+
+  const {
+    data: savedTopicIds = [],
+    refresh: refreshSavedTopics
+  } = useCache(
+    `saved-topics-${session?.user?.id || 'none'}`,
+    savedTopicsFetcher,
+    { 
+      ttl: 300000, // 5 minutes fresh
+      staleWhileRevalidate: 900000, // 15 minutes stale
+      persistToLocalStorage: false // Don't persist sensitive user data
+    }
+  )
+
+  // Handler to refresh saved topics when a card is saved/unsaved
+  const handleSavedTopicsUpdate = useCallback(() => {
+    refreshSavedTopics()
+  }, [refreshSavedTopics])
 
   const handleSearch = (query: string) => {
     setSearchQuery(query)
@@ -47,9 +84,9 @@ export default function Home() {
       clearTimeout(searchTimeoutId)
     }
     
-    // Debounce the search
+    // Debounce the search - the useCache hook will handle the actual fetching
     const timeoutId = setTimeout(() => {
-      fetchTopics(query, false)
+      // The cache key will change and trigger a new fetch automatically
     }, 300) // 300ms delay
     
     setSearchTimeoutId(timeoutId)
@@ -57,7 +94,7 @@ export default function Home() {
 
   const handleShowMoreScrolls = () => {
     setShowAllTopics(true)
-    fetchTopics(searchQuery, true)
+    // The cache key will change and trigger a new fetch automatically
   }
 
   const handleCreateTopic = async (title: string, description: string, isAnonymous?: boolean) => {
@@ -71,7 +108,9 @@ export default function Home() {
     })
 
     if (response.ok) {
-      fetchTopics(searchQuery, showAllTopics) // Refresh the list with current search and view state
+      // Invalidate cache to refresh the topics list
+      invalidateCache('topics-')
+      refreshTopics()
     } else {
       const errorData = await response.json()
       if (errorData.error === 'LIMIT_REACHED') {
@@ -94,7 +133,9 @@ export default function Home() {
     })
 
     if (response.ok) {
-      fetchTopics(searchQuery, showAllTopics) // Refresh the list
+      // Invalidate cache and refresh the list
+      invalidateCache('topics-')
+      refreshTopics()
     } else {
       const error = await response.json()
       throw new Error(error.error || 'Failed to delete topic')
@@ -103,7 +144,6 @@ export default function Home() {
 
   useEffect(() => {
     setIsClient(true)
-    fetchTopics()
   }, [])
 
   // Cleanup timeout on unmount
@@ -140,7 +180,7 @@ export default function Home() {
           <h1 className="font-elvish text-6xl mb-4">
             Memory Garden
           </h1>
-          <a href="https://www.fontspace.com/category/lord-of-the-rings"><img src="https://see.fontimg.com/api/rf5/6PPo/NWNmOTE3OTc0ZmFkNDBlNmE0Mzk4ODlmMmU0MWU2MGEudHRm/TWVtb3J5IEdhcmRlbg/elvish.png?r=fs&h=130&w=2000&fg=000000&bg=FFFFFF&tb=1&s=65" alt="Lord of the Rings fonts" className="w-1/5 mx-auto" /></a>
+          <img src="https://see.fontimg.com/api/rf5/6PPo/NWNmOTE3OTc0ZmFkNDBlNmE0Mzk4ODlmMmU0MWU2MGEudHRm/TWVtb3J5IEdhcmRlbg/elvish.png?r=fs&h=130&w=2000&fg=000000&bg=FFFFFF&tb=1&s=65" alt="Lord of the Rings fonts" className="w-1/5 mx-auto" />
           <p className="text-elvish-body text-sm text-forest/60">
             What wisdom do you seek?
           </p>
@@ -199,9 +239,14 @@ export default function Home() {
           ) : (
             <>
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {topics.map((topic, index) => (
-                  <div key={topic.id} className="flow-in" style={{ animationDelay: `${0.4 + index * 0.1}s` }}>
-                    <TopicCard topic={topic} onDelete={handleDeleteTopic} />
+                {topics.map((topic: TopicWithStats) => (
+                  <div key={topic.id}>
+                    <TopicCard 
+                      topic={topic} 
+                      onDelete={handleDeleteTopic}
+                      savedTopicIds={savedTopicIds}
+                      onSavedTopicsUpdate={handleSavedTopicsUpdate}
+                    />
                   </div>
                 ))}
               </div>

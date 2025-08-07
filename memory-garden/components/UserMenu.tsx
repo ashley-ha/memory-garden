@@ -17,9 +17,19 @@ export function UserMenu() {
   const [userUsage, setUserUsage] = useState<UserUsage | null>(null)
   const router = useRouter()
 
-  // Fetch username and usage when user is authenticated
+  // Initialize username from localStorage on client side
   useEffect(() => {
-    if (session?.user?.id && !username && !isLoadingUsername) {
+    if (session?.user?.id) {
+      const cachedUsername = localStorage.getItem(`username_${session.user.id}`)
+      if (cachedUsername) {
+        setUsername(cachedUsername)
+      }
+    }
+  }, [session?.user?.id])
+
+  // Fetch username and usage when user is authenticated (only if not already in session)
+  useEffect(() => {
+    if (session?.user?.id && !session.user.username && !username && !isLoadingUsername) {
       setIsLoadingUsername(true)
       
       // Fetch both profile and usage data
@@ -33,6 +43,8 @@ export function UserMenu() {
           
           if (profileData?.profile?.username) {
             setUsername(profileData.profile.username)
+            // Cache username in localStorage for immediate availability on next load
+            localStorage.setItem(`username_${session.user.id}`, profileData.profile.username)
           } else if (session.user?.id) {
             // User needs to set username, but only redirect if we have a valid session
             router.push('/onboarding/username')
@@ -50,6 +62,11 @@ export function UserMenu() {
         .finally(() => {
           setIsLoadingUsername(false)
         })
+    }
+    
+    // If username is already in session, use it directly
+    if (session?.user?.username && !username) {
+      setUsername(session.user.username)
     }
   }, [session, username, isLoadingUsername, router])
 
@@ -98,7 +115,7 @@ export function UserMenu() {
           </div>
         )}
         <span className="font-inter text-sm text-forest">
-          {displayUsername || session.user?.name?.split(' ')[0] || 'User'}
+          {displayUsername || 'User'}
         </span>
       </button>
 

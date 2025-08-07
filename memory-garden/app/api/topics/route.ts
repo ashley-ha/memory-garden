@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { canCreateTopic, incrementTopicUsage } from '@/lib/subscription'
+import { createCachedResponse, createInvalidationResponse } from '@/lib/api-cache'
 
 
 export async function GET(request: Request) {
@@ -111,7 +112,12 @@ export async function GET(request: Request) {
       })
     }
 
-    return NextResponse.json(sortedTopics)
+    // Return cached response - topics change less frequently than cards
+    return createCachedResponse(sortedTopics, {
+      ttl: 120, // 2 minutes
+      staleWhileRevalidate: 600, // 10 minutes
+      tags: ['topics']
+    })
   } catch (error) {
     console.error('API error:', error)
     return NextResponse.json({ error: 'Failed to fetch topics' }, { status: 500 })
@@ -179,11 +185,12 @@ export async function POST(request: Request) {
       await incrementTopicUsage(authorId)
     }
 
-    return NextResponse.json({
+    // Return response with cache invalidation
+    return createInvalidationResponse({
       ...data,
       card_count: 0,
       learner_count: 0 // Real learner count for new topics (starts at 0)
-    })
+    }, ['topics'])
   } catch (error) {
     console.error('API error:', error)
     return NextResponse.json({ error: 'Failed to create topic' }, { status: 500 })

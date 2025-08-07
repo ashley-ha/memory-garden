@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { Topic, Card } from '@/lib/types'
 import { isUserContent } from '@/lib/user'
 import { getOrCreateSessionId } from '@/lib/simple-session'
+import { useCache } from '@/lib/hooks/use-cache'
 
 interface TopicPageProps {
   params: Promise<{ id: string }>
@@ -13,9 +14,6 @@ interface TopicPageProps {
 
 export default function TopicPage({ params }: TopicPageProps) {
   const [resolvedParams, setResolvedParams] = useState<{ id: string } | null>(null)
-  const [topic, setTopic] = useState<Topic | null>(null)
-  const [cards, setCards] = useState<Card[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [showCardForm, setShowCardForm] = useState(false)
   const [showStudyLoginPrompt, setShowStudyLoginPrompt] = useState(false)
   const { data: session } = useSession()
@@ -24,37 +22,63 @@ export default function TopicPage({ params }: TopicPageProps) {
     params.then(setResolvedParams)
   }, [params])
 
-  const fetchTopicData = async (topicId: string) => {
-    try {
-      // Fetch topic details
-      const topicResponse = await fetch('/api/topics')
-      if (topicResponse.ok) {
-        const topics = await topicResponse.json()
-        const foundTopic = topics.find((t: any) => t.id === topicId)
-        if (foundTopic) {
-          setTopic(foundTopic)
-        }
-      }
+  // Cached topic fetcher
+  const topicFetcher = useCallback(async () => {
+    if (!resolvedParams?.id) return null
+    
+    const response = await fetch('/api/topics')
+    if (!response.ok) throw new Error('Failed to fetch topics')
+    
+    const topics = await response.json()
+    return topics.find((t: any) => t.id === resolvedParams.id) || null
+  }, [resolvedParams?.id])
 
-      // Fetch cards with user session for study deck status
-      const userSession = getOrCreateSessionId()
-      const cardsResponse = await fetch(`/api/cards?topicId=${topicId}&userId=${userSession}`)
-      if (cardsResponse.ok) {
-        const cardsData = await cardsResponse.json()
-        setCards(cardsData)
-      }
-    } catch (error) {
-      console.error('Failed to fetch topic data:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  // Cached cards fetcher
+  const cardsFetcher = useCallback(async () => {
+    if (!resolvedParams?.id) return []
+    
+    const userSession = getOrCreateSessionId()
+    const response = await fetch(`/api/cards?topicId=${resolvedParams.id}&userId=${userSession}`)
+    if (!response.ok) throw new Error('Failed to fetch cards')
+    
+    return response.json()
+  }, [resolvedParams?.id])
 
-  useEffect(() => {
-    if (resolvedParams?.id) {
-      fetchTopicData(resolvedParams.id)
+  // Use cached data with localStorage persistence
+  const {
+    data: topic,
+    isLoading: topicLoading,
+    refresh: refreshTopic
+  } = useCache(
+    `topic-${resolvedParams?.id}`, 
+    topicFetcher,
+    { 
+      ttl: 120000, // 2 minutes fresh
+      staleWhileRevalidate: 600000, // 10 minutes stale
+      persistToLocalStorage: true // Persist across page reloads
     }
-  }, [resolvedParams])
+  )
+
+  const {
+    data: cards = [],
+    isLoading: cardsLoading,
+    refresh: refreshCards
+  } = useCache(
+    `cards-${resolvedParams?.id}`,
+    cardsFetcher,
+    { 
+      ttl: 60000, // 1 minute fresh
+      staleWhileRevalidate: 300000, // 5 minutes stale
+      persistToLocalStorage: true // Persist across page reloads
+    }
+  )
+
+  const isLoading = topicLoading || cardsLoading
+
+  const refreshData = useCallback(() => {
+    refreshTopic()
+    refreshCards()
+  }, [refreshTopic, refreshCards])
 
   if (isLoading || !topic) {
     return (
@@ -84,7 +108,7 @@ export default function TopicPage({ params }: TopicPageProps) {
             {session ? (
               <Link href={`/study/${topic.id}`}>
                 <button className="btn-elvish">
-                  Study {cards.filter(c => c.in_study_deck).length > 0 ? `(${cards.filter(c => c.in_study_deck).length})` : ''}
+                  Study {cards.filter((c: Card) => c.in_study_deck).length > 0 ? `(${cards.filter((c: Card) => c.in_study_deck).length})` : ''}
                 </button>
               </Link>
             ) : (
@@ -92,7 +116,7 @@ export default function TopicPage({ params }: TopicPageProps) {
                 onClick={() => setShowStudyLoginPrompt(true)}
                 className="btn-elvish bg-gold/10 text-gold hover:bg-gold hover:text-forest"
               >
-                🔐 Login to Study
+                Login to Study
               </button>
             )}
             <button 
@@ -107,9 +131,9 @@ export default function TopicPage({ params }: TopicPageProps) {
           <div className="text-center mt-2 text-xs text-forest/60">
             {!session
               ? "Login to create your personal study deck"
-              : cards.filter(c => c.in_study_deck).length === 0 
+              : cards.filter((c: Card) => c.in_study_deck).length === 0 
                 ? "Add cards to your study deck to begin studying"
-                : `${cards.filter(c => c.in_study_deck).length} cards in your study deck`
+                : `${cards.filter((c: Card) => c.in_study_deck).length} cards in your study deck`
             }
           </div>
         </header>
@@ -122,7 +146,7 @@ export default function TopicPage({ params }: TopicPageProps) {
               <CardForm 
                 onCancel={() => setShowCardForm(false)} 
                 topicId={topic.id}
-                onCardCreated={() => fetchTopicData(topic.id)}
+                onCardCreated={() => refreshCards()}
               />
             </div>
           </div>
@@ -176,7 +200,7 @@ export default function TopicPage({ params }: TopicPageProps) {
               
               {/* Group cards by type */}
               {['analogy', 'definition', 'knowledge'].map((cardType) => {
-                const typeCards = cards.filter(card => card.type === cardType)
+                const typeCards = cards.filter((card: Card) => card.type === cardType)
                 if (typeCards.length === 0) return null
                 
                 const getCardTypeTitle = (type: string) => {
@@ -194,11 +218,11 @@ export default function TopicPage({ params }: TopicPageProps) {
                       {getCardTypeTitle(cardType)}
                     </h3>
                     <div className="grid gap-4 md:grid-cols-2">
-                      {typeCards.map((card) => (
+                      {typeCards.map((card: Card) => (
                         <CardDisplay 
                           key={card.id} 
                           card={card} 
-                          onCardDeleted={() => fetchTopicData(topic.id)}
+                          onCardDeleted={() => refreshCards()}
                         />
                       ))}
                     </div>
@@ -692,7 +716,7 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
                   : 'bg-forest/10 text-forest hover:bg-forest/20'
             } disabled:opacity-50`}
           >
-            {isTogglingStudyDeck ? '...' : !session ? '🔐 Login to Study' : inStudyDeck ? '✓ In Deck' : '➕ Add to Study'}
+            {isTogglingStudyDeck ? '...' : !session ? 'Login to Study' : inStudyDeck ? '✓ In Deck' : '➕ Add to Study'}
           </button>
           <button
             onClick={handleVote}
