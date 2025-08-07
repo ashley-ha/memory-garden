@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -16,7 +16,7 @@ interface UserUsage {
   }
 }
 
-export default function UpgradePage() {
+function UpgradeContent() {
   const { data: session } = useSession()
   const searchParams = useSearchParams()
   const [userUsage, setUserUsage] = useState<UserUsage | null>(null)
@@ -247,5 +247,20 @@ export default function UpgradePage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function UpgradePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-parchment py-12 px-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="animate-spin w-12 h-12 border-4 border-gold border-t-transparent rounded-full mx-auto mb-4"></div>
+          <h1 className="text-elvish-title text-3xl mb-4">Loading...</h1>
+        </div>
+      </div>
+    }>
+      <UpgradeContent />
+    </Suspense>
   )
 }

@@ -181,7 +181,7 @@ export function CreateTopicModal({ isOpen, onClose, onSubmit }: CreateTopicModal
           <div className="flex space-x-3">
             <button
               type="submit"
-              disabled={!title.trim() || isSubmitting || (userUsage && !userUsage.canCreateTopic)}
+              disabled={!title.trim() || isSubmitting || (userUsage?.canCreateTopic === false)}
               className="btn-elvish flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? 'Creating...' : 'Create Topic'}
