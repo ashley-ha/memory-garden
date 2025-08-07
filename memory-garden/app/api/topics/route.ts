@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { canCreateTopic, incrementTopicUsage } from '@/lib/subscription'
 
 
 export async function GET(request: Request) {
@@ -26,61 +27,75 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to fetch topics' }, { status: 500 })
     }
 
-    // Get card counts and calculate popularity
-    const topicsWithStats = await Promise.all(
-      (topics || []).map(async (topic) => {
-        const { count: cardCount } = await supabase
-          .from('cards')
-          .select('*', { count: 'exact', head: true })
-          .eq('topic_id', topic.id)
+    // Get card counts for all topics in a single query
+    const { data: cardCounts } = await supabase
+      .from('cards')
+      .select('topic_id')
+      .in('topic_id', (topics || []).map(t => t.id))
 
-        // Get unique learner count from real user interactions for this topic's cards
-        const { data: cardIds } = await supabase
-          .from('cards')
-          .select('id')
-          .eq('topic_id', topic.id)
+    const cardCountMap = new Map<string, number>()
+    cardCounts?.forEach(card => {
+      cardCountMap.set(card.topic_id, (cardCountMap.get(card.topic_id) || 0) + 1)
+    })
 
-        let learnerCount = 0
-        if (cardIds && cardIds.length > 0) {
-          // Get users who have studied cards (reviews)
-          const { data: reviews } = await supabase
-            .from('reviews')
-            .select('user_id')
-            .in('card_id', cardIds.map(c => c.id))
+    // Get all cards with their IDs for learner calculations
+    const { data: allTopicCards } = await supabase
+      .from('cards')
+      .select('id, topic_id, author_id')
+      .in('topic_id', (topics || []).map(t => t.id))
 
-          // Get users who have marked cards as helpful
-          const { data: helpfulVotes } = await supabase
-            .from('helpful_votes')
-            .select('user_id')
-            .in('card_id', cardIds.map(c => c.id))
+    // Get all card IDs
+    const allCardIds = allTopicCards?.map(c => c.id) || []
 
-          // Get users who have contributed cards to this topic
-          const { data: cardContributors } = await supabase
-            .from('cards')
-            .select('author_id')
-            .eq('topic_id', topic.id)
-            .not('author_id', 'is', null)
+    // Get all reviews and helpful votes in bulk
+    const [reviewsResult, helpfulVotesResult] = await Promise.all([
+      supabase.from('reviews').select('user_id, card_id').in('card_id', allCardIds),
+      supabase.from('helpful_votes').select('user_id, card_id').in('card_id', allCardIds)
+    ])
 
-          // Combine all unique user sessions/IDs
-          const allUserSessions = new Set([
-            ...(reviews?.map(r => r.user_id) || []),
-            ...(helpfulVotes?.map(v => v.user_id) || []),
-            ...(cardContributors?.map(c => c.author_id) || [])
-          ])
+    // Group learner data by topic
+    const learnerCountMap = new Map<string, Set<string>>()
+    
+    // Initialize empty sets for each topic
+    topics?.forEach(topic => {
+      learnerCountMap.set(topic.id, new Set())
+    })
 
-          learnerCount = allUserSessions.size
-        }
+    // Add review users
+    reviewsResult.data?.forEach(review => {
+      const card = allTopicCards?.find(c => c.id === review.card_id)
+      if (card) {
+        learnerCountMap.get(card.topic_id)?.add(review.user_id)
+      }
+    })
 
-        const finalLearnerCount = learnerCount
+    // Add helpful vote users
+    helpfulVotesResult.data?.forEach(vote => {
+      const card = allTopicCards?.find(c => c.id === vote.card_id)
+      if (card) {
+        learnerCountMap.get(card.topic_id)?.add(vote.user_id)
+      }
+    })
 
-        return {
-          ...topic,
-          card_count: cardCount || 0,
-          learner_count: finalLearnerCount,
-          popularity_score: (cardCount || 0) + finalLearnerCount
-        }
-      })
-    )
+    // Add card contributors
+    allTopicCards?.forEach(card => {
+      if (card.author_id) {
+        learnerCountMap.get(card.topic_id)?.add(card.author_id)
+      }
+    })
+
+    // Build topics with stats
+    const topicsWithStats = (topics || []).map(topic => {
+      const cardCount = cardCountMap.get(topic.id) || 0
+      const learnerCount = learnerCountMap.get(topic.id)?.size || 0
+
+      return {
+        ...topic,
+        card_count: cardCount,
+        learner_count: learnerCount,
+        popularity_score: cardCount + learnerCount
+      }
+    })
 
     // Sort by popularity (card_count + learner_count) and limit to top results
     const sortedTopics = topicsWithStats
@@ -129,7 +144,17 @@ export async function POST(request: Request) {
       finalAuthorName = null
     }
 
-
+    // Check if user can create a topic (subscription limits)
+    if (authorId && authorId !== 'anonymous') {
+      const limitCheck = await canCreateTopic(authorId)
+      if (!limitCheck.allowed) {
+        return NextResponse.json({ 
+          error: 'LIMIT_REACHED',
+          message: limitCheck.reason,
+          usage: limitCheck.usage
+        }, { status: 403 })
+      }
+    }
 
     const supabase = await createClient()
     
@@ -147,6 +172,11 @@ export async function POST(request: Request) {
     if (error) {
       console.error('Database error:', error)
       return NextResponse.json({ error: 'Failed to create topic' }, { status: 500 })
+    }
+
+    // Increment usage counter for authenticated users
+    if (authorId && authorId !== 'anonymous') {
+      await incrementTopicUsage(authorId)
     }
 
     return NextResponse.json({

@@ -34,8 +34,9 @@ export default function TopicPage({ params }: TopicPageProps) {
         }
       }
 
-      // Fetch cards
-      const cardsResponse = await fetch(`/api/cards?topicId=${topicId}`)
+      // Fetch cards with user session for study deck status
+      const userSession = getOrCreateSessionId()
+      const cardsResponse = await fetch(`/api/cards?topicId=${topicId}&userId=${userSession}`)
       if (cardsResponse.ok) {
         const cardsData = await cardsResponse.json()
         setCards(cardsData)
@@ -80,7 +81,7 @@ export default function TopicPage({ params }: TopicPageProps) {
           <div className="flex justify-center space-x-4">
             <Link href={`/study/${topic.id}`}>
               <button className="btn-elvish">
-                Study
+                Study {cards.filter(c => c.in_study_deck).length > 0 ? `(${cards.filter(c => c.in_study_deck).length})` : ''}
               </button>
             </Link>
             <button 
@@ -89,6 +90,14 @@ export default function TopicPage({ params }: TopicPageProps) {
             >
             Contribute Wisdom
             </button>
+          </div>
+          
+          {/* Study deck status */}
+          <div className="text-center mt-2 text-xs text-forest/60">
+            {cards.filter(c => c.in_study_deck).length === 0 
+              ? "Add cards to your study deck to begin studying"
+              : `${cards.filter(c => c.in_study_deck).length} cards in your study deck`
+            }
           </div>
         </header>
 
@@ -168,7 +177,10 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
   onCardCreated: () => void
 }) {
   const [type, setType] = useState<'analogy' | 'definition' | 'knowledge'>('analogy')
-  const [content, setContent] = useState('')
+  const [isFlashcard, setIsFlashcard] = useState(true) // Default to flashcard for definition/knowledge
+  const [content, setContent] = useState('') // For general wisdom
+  const [frontContent, setFrontContent] = useState('') // For flashcard front
+  const [backContent, setBackContent] = useState('') // For flashcard back
   const [sources, setSources] = useState('')
   const [isAnonymous, setIsAnonymous] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -197,17 +209,27 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
           }
         })
 
+      // Prepare the data based on whether it's a flashcard or general wisdom
+      const cardData: any = {
+        topicId,
+        type,
+        sources: sourceUrls.length > 0 ? sourceUrls.join('\n') : null,
+        isAnonymous,
+        userSession
+      }
+
+      // For definition/knowledge cards, check if it's a flashcard
+      if ((type === 'definition' || type === 'knowledge') && isFlashcard) {
+        cardData.frontContent = frontContent.trim()
+        cardData.backContent = backContent.trim()
+      } else {
+        cardData.content = content.trim()
+      }
+
       const response = await fetch('/api/cards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topicId,
-          type,
-          content,
-          sources: sourceUrls.length > 0 ? sourceUrls : null,
-          isAnonymous,
-          userSession
-        })
+        body: JSON.stringify(cardData)
       })
 
       if (response.ok) {
@@ -237,7 +259,10 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
               name="cardType"
               value="analogy"
               checked={type === 'analogy'}
-              onChange={() => setType('analogy')}
+              onChange={() => {
+                setType('analogy')
+                setIsFlashcard(false) // Analogies are never flashcards
+              }}
               className="mr-2"
             />
             <span className="text-sm">Analogy</span>
@@ -248,7 +273,10 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
               name="cardType"
               value="definition"
               checked={type === 'definition'}
-              onChange={() => setType('definition')}
+              onChange={() => {
+                setType('definition')
+                setIsFlashcard(true) // Default to flashcard for definitions
+              }}
               className="mr-2"
             />
             <span className="text-sm">Definition</span>
@@ -259,7 +287,10 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
               name="cardType"
               value="knowledge"
               checked={type === 'knowledge'}
-              onChange={() => setType('knowledge')}
+              onChange={() => {
+                setType('knowledge')
+                setIsFlashcard(true) // Default to flashcard for knowledge
+              }}
               className="mr-2"
             />
             <span className="text-sm">Knowledge</span>
@@ -267,44 +298,103 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-forest mb-1">
-          {type === 'analogy' ? 'Your Analogy' : type === 'definition' ? 'Your Definition' : 'Your Knowledge'}
-        </label>
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          className="input-elvish w-full h-32 resize-none"
-          placeholder={
-            type === 'analogy' 
-              ? "Explain this concept using a relatable comparison..."
-              : type === 'definition'
-              ? "Provide a clear, precise definition..."
-              : "Share practical knowledge, insights, or facts about this topic..."
-          }
-          required
-        />
-      </div>
-
-      {/* Sources field - only show for definition and knowledge cards */}
+      {/* Flashcard toggle for definition/knowledge cards */}
       {(type === 'definition' || type === 'knowledge') && (
         <div>
-          <label className="block text-sm font-medium text-forest mb-1">
-            Sources <span className="text-forest/60 text-xs">(optional)</span>
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={!isFlashcard}
+              onChange={(e) => setIsFlashcard(!e.target.checked)}
+              className="rounded border-gold/30 text-gold focus:ring-gold/50"
+            />
+            <span className="text-sm font-medium text-forest">
+              Contribute general wisdom instead
+            </span>
           </label>
-          <textarea
-            value={sources}
-            onChange={(e) => setSources(e.target.value)}
-            className="input-elvish w-full h-20 resize-none"
-            placeholder="Add source URLs, one per line:
-https://example.com/article
-https://wikipedia.org/wiki/topic"
-          />
           <p className="text-xs text-forest/60 mt-1">
-            Add links to articles, papers, or resources that support this {type}. One URL per line.
+            {isFlashcard 
+              ? "Create a flashcard with a question/prompt on the front and answer on the back"
+              : "Share wisdom or insights without the flashcard format"
+            }
           </p>
         </div>
       )}
+
+      {/* Content fields based on card type and format */}
+      {type === 'analogy' || !isFlashcard ? (
+        <div>
+          <label className="block text-sm font-medium text-forest mb-1">
+            {type === 'analogy' ? 'Your Analogy' : type === 'definition' ? 'Your Definition' : 'Your Knowledge'}
+          </label>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="input-elvish w-full h-32 resize-none"
+            placeholder={
+              type === 'analogy' 
+                ? "Explain this concept using a relatable comparison..."
+                : type === 'definition'
+                ? "Provide a clear, precise definition..."
+                : "Share practical knowledge, insights, or facts about this topic..."
+            }
+            required
+          />
+        </div>
+      ) : (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-forest mb-1">
+              Front (Question/Prompt)
+            </label>
+            <textarea
+              value={frontContent}
+              onChange={(e) => setFrontContent(e.target.value)}
+              className="input-elvish w-full h-24 resize-none"
+              placeholder={
+                type === 'definition'
+                  ? "What is [concept]?"
+                  : "Question or prompt that tests understanding..."
+              }
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-forest mb-1">
+              Back (Answer/Explanation)
+            </label>
+            <textarea
+              value={backContent}
+              onChange={(e) => setBackContent(e.target.value)}
+              className="input-elvish w-full h-32 resize-none"
+              placeholder={
+                type === 'definition'
+                  ? "A clear, precise definition of the concept..."
+                  : "The answer or explanation..."
+              }
+              required
+            />
+          </div>
+        </>
+      )}
+
+      {/* Sources field - show for all cards */}
+      <div>
+        <label className="block text-sm font-medium text-forest mb-1">
+          Sources <span className="text-forest/60 text-xs">(optional)</span>
+        </label>
+        <textarea
+          value={sources}
+          onChange={(e) => setSources(e.target.value)}
+          className="input-elvish w-full h-20 resize-none"
+          placeholder="Add source URLs, one per line:
+https://example.com/article
+https://wikipedia.org/wiki/topic"
+        />
+        <p className="text-xs text-forest/60 mt-1">
+          Add links to articles, papers, or resources that support this {type}. One URL per line.
+        </p>
+      </div>
 
       <div>
         <label className="flex items-center space-x-2">
@@ -332,7 +422,11 @@ https://wikipedia.org/wiki/topic"
       <div className="flex space-x-3">
         <button 
           type="submit" 
-          disabled={isSubmitting || !content.trim()}
+          disabled={isSubmitting || (
+            (type === 'analogy' || !isFlashcard) 
+              ? !content.trim() 
+              : (!frontContent.trim() || !backContent.trim())
+          )}
           className="btn-elvish flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isSubmitting ? 'Sharing...' : 'Share Wisdom'}
@@ -358,6 +452,8 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showSources, setShowSources] = useState(false)
+  const [inStudyDeck, setInStudyDeck] = useState(card.in_study_deck)
+  const [isTogglingStudyDeck, setIsTogglingStudyDeck] = useState(false)
 
   // Check if current user can delete this card
   const canDelete = () => {
@@ -430,6 +526,46 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
     }
   }
 
+  const handleToggleStudyDeck = async () => {
+    if (isTogglingStudyDeck) return
+    
+    setIsTogglingStudyDeck(true)
+    try {
+      const userSession = getOrCreateSessionId()
+      
+      if (inStudyDeck) {
+        // Remove from deck
+        const response = await fetch(`/api/user-study-deck/${card.id}?userId=${userSession}`, {
+          method: 'DELETE'
+        })
+        if (response.ok) {
+          setInStudyDeck(false)
+        } else {
+          const error = await response.json()
+          alert(error.error || 'Failed to remove from study deck')
+        }
+      } else {
+        // Add to deck
+        const response = await fetch('/api/user-study-deck', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: userSession, cardId: card.id })
+        })
+        if (response.ok) {
+          setInStudyDeck(true)
+        } else {
+          const error = await response.json()
+          alert(error.error || 'Failed to add to study deck')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to toggle study deck:', error)
+      alert('Failed to update study deck status. Please try again.')
+    } finally {
+      setIsTogglingStudyDeck(false)
+    }
+  }
+
   return (
     <div className="card-elvish">
       <div className="flex items-start justify-between mb-3">
@@ -452,23 +588,40 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
         </div>
       </div>
       
-      <p className="text-elvish-body mb-4">{card.content}</p>
+      {/* Card content - show differently for flashcards */}
+      {card.front_content ? (
+        <div className="space-y-3 mb-4">
+          <div className="p-3 bg-gold/5 border border-gold/20 rounded">
+            <p className="text-xs font-medium text-forest/80 mb-1">Front:</p>
+            <p className="text-elvish-body">{card.front_content}</p>
+          </div>
+          <div className="p-3 bg-sage/5 border border-sage/20 rounded">
+            <p className="text-xs font-medium text-forest/80 mb-1">Back:</p>
+            <p className="text-elvish-body">{card.back_content}</p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-elvish-body mb-4">{card.content}</p>
+      )}
       
       {/* Sources display */}
-      {showSources && card.sources && card.sources.length > 0 && (
+      {showSources && card.sources && (
         <div className="mb-4 p-3 bg-gold/5 border border-gold/20 rounded">
           <h4 className="text-xs font-medium text-forest mb-2">Sources:</h4>
           <div className="space-y-1">
-            {card.sources.map((source, index) => (
+            {(typeof card.sources === 'string' 
+              ? card.sources.split('\n').filter(s => s.trim())
+              : card.sources
+            ).map((source, index) => (
               <div key={index} className="flex items-center gap-2">
                 <span className="text-xs text-gold">🔗</span>
                 <a 
-                  href={source}
+                  href={typeof source === 'string' ? source.trim() : source}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-forest hover:text-gold underline hover:no-underline break-all"
                 >
-                  {source}
+                  {typeof source === 'string' ? source.trim() : source}
                 </a>
               </div>
             ))}
@@ -476,32 +629,46 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
         </div>
       )}
       
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="text-xs text-forest/60 font-inter">
-            {card.author_name ? `shared by ${card.author_name}` : 'shared anonymously'}
-          </div>
-          {/* Show sources button for definition and knowledge cards with sources */}
-          {card.sources && card.sources.length > 0 && (card.type === 'definition' || card.type === 'knowledge') && (
+      <div className="space-y-3">
+        <div className="text-xs text-forest/60 font-inter">
+          {card.author_name ? `shared by ${card.author_name}` : 'shared anonymously'}
+        </div>
+        <div className="flex items-center gap-3">
+          {/* Show sources button for cards with sources */}
+          {card.sources && (
+            (typeof card.sources === 'string' ? card.sources.trim() : card.sources.length > 0)
+          ) && (
             <button
               onClick={() => setShowSources(!showSources)}
-              className="text-xs px-2 py-1 bg-gold/10 text-gold hover:bg-gold/20 rounded transition-colors"
+              className="text-xs px-3 py-1 bg-gold/10 text-gold hover:bg-gold/20 rounded transition-colors flex-1"
             >
-              📜 View Sources
+              📜 {showSources ? 'Hide' : 'View'} Sources
             </button>
           )}
+          {/* Add to Study Deck button */}
+          <button
+            onClick={handleToggleStudyDeck}
+            disabled={isTogglingStudyDeck}
+            className={`text-xs px-3 py-1 rounded transition-colors flex-1 ${
+              inStudyDeck 
+                ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+                : 'bg-forest/10 text-forest hover:bg-forest/20'
+            } disabled:opacity-50`}
+          >
+            {isTogglingStudyDeck ? '...' : inStudyDeck ? '✓ In Deck' : '➕ Add to Study'}
+          </button>
+          <button
+            onClick={handleVote}
+            disabled={hasVoted || isVoting}
+            className={`text-xs px-3 py-1 rounded transition-colors flex-1 ${
+              hasVoted 
+                ? 'bg-sage/20 text-sage cursor-not-allowed' 
+                : 'bg-gold/20 text-gold hover:bg-gold hover:text-forest disabled:opacity-50'
+            } ${showSparkle ? 'sparkle-animation' : ''}`}
+          >
+            {isVoting ? '...' : hasVoted ? '⭐ Helpful!' : 'Mark Helpful'}
+          </button>
         </div>
-        <button
-          onClick={handleVote}
-          disabled={hasVoted || isVoting}
-          className={`text-xs px-3 py-1 rounded transition-colors ${
-            hasVoted 
-              ? 'bg-sage/20 text-sage cursor-not-allowed' 
-              : 'bg-gold/20 text-gold hover:bg-gold hover:text-forest disabled:opacity-50'
-          } ${showSparkle ? 'sparkle-animation' : ''}`}
-        >
-          {isVoting ? 'Voting...' : hasVoted ? '⭐ Helpful!' : 'Mark Helpful'}
-        </button>
       </div>
 
       {/* Delete confirmation modal */}

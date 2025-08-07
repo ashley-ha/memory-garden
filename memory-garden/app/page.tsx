@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { TopicCard } from '@/components/TopicCard'
 import { CreateTopicModal } from '@/components/CreateTopicModal'
 import { UserMenu } from '@/components/UserMenu'
+import { TopicGridSkeleton } from '@/components/TopicCardSkeleton'
 import { TopicWithStats } from '@/lib/types'
 import { getOrCreateSessionId } from '@/lib/simple-session'
 import { TbArrowLeftRhombus } from "react-icons/tb"
@@ -15,6 +16,7 @@ export default function Home() {
   const [isClient, setIsClient] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showAllTopics, setShowAllTopics] = useState(false)
+  const [searchTimeoutId, setSearchTimeoutId] = useState<NodeJS.Timeout | null>(null)
 
   const fetchTopics = async (search = '', showAll = false) => {
     try {
@@ -39,7 +41,18 @@ export default function Home() {
   const handleSearch = (query: string) => {
     setSearchQuery(query)
     setShowAllTopics(false) // Reset to showing limited topics when searching
-    fetchTopics(query, false)
+    
+    // Clear existing timeout
+    if (searchTimeoutId) {
+      clearTimeout(searchTimeoutId)
+    }
+    
+    // Debounce the search
+    const timeoutId = setTimeout(() => {
+      fetchTopics(query, false)
+    }, 300) // 300ms delay
+    
+    setSearchTimeoutId(timeoutId)
   }
 
   const handleShowMoreScrolls = () => {
@@ -60,7 +73,11 @@ export default function Home() {
     if (response.ok) {
       fetchTopics(searchQuery, showAllTopics) // Refresh the list with current search and view state
     } else {
-      throw new Error('Failed to create topic')
+      const errorData = await response.json()
+      if (errorData.error === 'LIMIT_REACHED') {
+        throw new Error(`LIMIT_REACHED: ${errorData.message}`)
+      }
+      throw new Error(errorData.message || 'Failed to create topic')
     }
   }
 
@@ -88,6 +105,15 @@ export default function Home() {
     setIsClient(true)
     fetchTopics()
   }, [])
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutId) {
+        clearTimeout(searchTimeoutId)
+      }
+    }
+  }, [searchTimeoutId])
 
   // Prevent hydration mismatch by only rendering after client-side mount
   if (!isClient) {
@@ -155,9 +181,7 @@ export default function Home() {
           )}
           
           {isLoading ? (
-            <div className="text-center text-elvish-body">
-              Loading scrolls...
-            </div>
+            <TopicGridSkeleton />
           ) : topics.length === 0 ? (
             <div className="text-center">
               <div className="card-elvish max-w-md mx-auto">

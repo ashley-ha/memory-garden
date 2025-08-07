@@ -33,11 +33,13 @@ export default function StudyPage({ params }: StudyPageProps) {
         }
       }
 
-      // Fetch cards for study
-      const cardsResponse = await fetch(`/api/cards?topicId=${topicId}`)
+      // Fetch cards from user's study deck for this topic
+      const { getOrCreateSessionId } = await import('@/lib/simple-session')
+      const userSession = getOrCreateSessionId()
+      const cardsResponse = await fetch(`/api/user-study-deck?userId=${userSession}&topicId=${topicId}`)
       if (cardsResponse.ok) {
-        const cardsData = await cardsResponse.json()
-        setCards(cardsData)
+        const studyCards = await cardsResponse.json()
+        setCards(studyCards)
       }
     } catch (error) {
       console.error('Failed to fetch study data:', error)
@@ -56,8 +58,8 @@ export default function StudyPage({ params }: StudyPageProps) {
 
   const handleRating = async (rating: 'again' | 'hard' | 'good' | 'easy') => {
     try {
-      const { getUserSession } = await import('@/lib/session')
-      const userSession = getUserSession()
+      const { getOrCreateSessionId } = await import('@/lib/simple-session')
+      const userSession = getOrCreateSessionId()
       
       // Submit rating for spaced repetition
       await fetch('/api/reviews', {
@@ -96,13 +98,14 @@ export default function StudyPage({ params }: StudyPageProps) {
         <div className="container mx-auto px-4 py-8">
           <div className="max-w-2xl mx-auto text-center">
             <div className="card-elvish">
-              <h2 className="text-elvish-title text-2xl mb-4">No Cards Available</h2>
+              <h2 className="text-elvish-title text-2xl mb-4">No Cards in Study Deck</h2>
               <p className="text-elvish-body mb-6">
-                This topic doesn't have any cards yet. Be the first to contribute!
+                No cards have been added to the study deck for this topic yet. 
+                Visit the topic page to add cards to your study deck.
               </p>
               <Link href={`/topic/${topic.id}`}>
                 <button className="btn-elvish">
-                  Create First Card
+                  View Topic Cards
                 </button>
               </Link>
             </div>
@@ -173,11 +176,44 @@ export default function StudyPage({ params }: StudyPageProps) {
 
             {/* Card Content */}
             <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <p className="text-elvish-body text-lg leading-relaxed mb-6">
-                  {currentCard.content}
-                </p>
-                <div className="text-sm text-forest/60 font-inter">
+              <div className="text-center w-full">
+                {currentCard.front_content ? (
+                  // Flashcard display
+                  <div className="space-y-6">
+                    {!showAnswer ? (
+                      // Front of flashcard
+                      <div className="p-6 bg-gold/5 border-2 border-gold/20 rounded-lg">
+                        <p className="text-xs font-medium text-gold mb-2">QUESTION</p>
+                        <p className="text-elvish-body text-lg leading-relaxed">
+                          {currentCard.front_content}
+                        </p>
+                      </div>
+                    ) : (
+                      // Show both front and back
+                      <div className="space-y-4">
+                        <div className="p-4 bg-gold/5 border border-gold/20 rounded-lg">
+                          <p className="text-xs font-medium text-gold mb-1">QUESTION</p>
+                          <p className="text-elvish-body text-sm">
+                            {currentCard.front_content}
+                          </p>
+                        </div>
+                        <div className="p-6 bg-sage/5 border-2 border-sage/20 rounded-lg">
+                          <p className="text-xs font-medium text-sage mb-2">ANSWER</p>
+                          <p className="text-elvish-body text-lg leading-relaxed">
+                            {currentCard.back_content}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  // Regular card display
+                  <p className="text-elvish-body text-lg leading-relaxed mb-6">
+                    {currentCard.content}
+                  </p>
+                )}
+                
+                <div className="text-sm text-forest/60 font-inter mt-6">
                   {currentCard.author_name ? `wisdom by ${currentCard.author_name}` : 'wisdom shared anonymously'}
                 </div>
               </div>
@@ -191,7 +227,7 @@ export default function StudyPage({ params }: StudyPageProps) {
                     onClick={() => setShowAnswer(true)}
                     className="btn-elvish"
                   >
-                    Reveal Understanding
+                    {currentCard.front_content ? 'Reveal Answer' : 'Show Rating'}
                   </button>
                 </div>
               ) : (

@@ -5,32 +5,45 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
+interface UserUsage {
+  isPro: boolean
+}
+
 export function UserMenu() {
   const { data: session, status } = useSession()
   const [isOpen, setIsOpen] = useState(false)
   const [username, setUsername] = useState<string | null>(null)
   const [isLoadingUsername, setIsLoadingUsername] = useState(false)
+  const [userUsage, setUserUsage] = useState<UserUsage | null>(null)
   const router = useRouter()
 
-  // Fetch username when user is authenticated
+  // Fetch username and usage when user is authenticated
   useEffect(() => {
     if (session?.user?.id && !username && !isLoadingUsername) {
       setIsLoadingUsername(true)
-      fetch('/api/profile')
-        .then(res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          return res.json()
-        })
-        .then(data => {
-          if (data.profile?.username) {
-            setUsername(data.profile.username)
+      
+      // Fetch both profile and usage data
+      Promise.all([
+        fetch('/api/profile'),
+        fetch('/api/user/usage')
+      ])
+        .then(async ([profileRes, usageRes]) => {
+          const profileData = profileRes.ok ? await profileRes.json() : null
+          const usageData = usageRes.ok ? await usageRes.json() : null
+          
+          if (profileData?.profile?.username) {
+            setUsername(profileData.profile.username)
           } else if (session.user?.id) {
             // User needs to set username, but only redirect if we have a valid session
             router.push('/onboarding/username')
           }
+          
+          if (usageData) {
+            setUserUsage(usageData)
+          }
         })
         .catch(err => {
-          console.error('Failed to fetch profile:', err)
+          console.error('Failed to fetch user data:', err)
           // If there's an error, still allow them to use the app
           // Don't redirect to username setup if there's a fetch error
         })
@@ -92,15 +105,32 @@ export function UserMenu() {
       {isOpen && (
         <div className="absolute right-0 mt-2 w-48 bg-scroll-white rounded-lg shadow-lg border border-gold/20 z-50">
           <div className="p-3 border-b border-gold/10">
-            <p className="font-inter text-sm font-medium text-forest">
-              @{displayUsername || 'no-username'}
-            </p>
-            <p className="font-inter text-xs text-forest/60">
-              {session.user?.email}
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-inter text-sm font-medium text-forest">
+                  @{displayUsername || 'no-username'}
+                </p>
+                <p className="font-inter text-xs text-forest/60">
+                  {session.user?.email}
+                </p>
+              </div>
+              {userUsage?.isPro && (
+                <span className="text-gold text-lg">⭐</span>
+              )}
+            </div>
           </div>
           
           <div className="py-2">
+            {!userUsage?.isPro && (
+              <>
+                <Link href="/upgrade" onClick={() => setIsOpen(false)}>
+                  <button className="w-full text-left px-4 py-2 text-sm font-inter text-gold hover:bg-gold/10 transition-colors font-medium">
+                    ⭐ Upgrade to Pro
+                  </button>
+                </Link>
+                <div className="border-t border-gold/10 my-1"></div>
+              </>
+            )}
             <Link href="/my-scrolls" onClick={() => setIsOpen(false)}>
               <button className="w-full text-left px-4 py-2 text-sm font-inter text-forest hover:bg-gold/10 transition-colors">
                 My Scrolls

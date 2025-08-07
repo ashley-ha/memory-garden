@@ -6,7 +6,7 @@ export function Footer() {
       <div className="container mx-auto px-4 py-8">
         <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
           <div className="text-elvish-body text-sm text-forest/60">
-            <p>🍃 Memory Garden - Learn together, grow together</p>
+            <p>Memory Garden, the social Anki. Learn together, grow together</p>
           </div>
           
           <div className="flex flex-wrap justify-center gap-6 text-elvish-body text-sm">
