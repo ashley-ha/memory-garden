@@ -68,9 +68,20 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription) {
   const userId = subscription.metadata?.userId
   
   if (!userId) {
-    console.error('No userId in subscription metadata')
+    console.error('No userId in subscription metadata:', { 
+      subscriptionId: subscription.id, 
+      metadata: subscription.metadata 
+    })
     return
   }
+  
+  console.log('Processing subscription change:', {
+    subscriptionId: subscription.id,
+    userId,
+    status: subscription.status,
+    currentPeriodStart: (subscription as any).current_period_start,
+    currentPeriodEnd: (subscription as any).current_period_end
+  })
 
   const subscriptionData = {
     user_id: userId,
@@ -78,11 +89,11 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription) {
     stripe_subscription_id: subscription.id,
     status: subscription.status,
     plan_type: subscription.metadata?.planType || null,
-    current_period_start: subscription.items.data[0]?.current_period_start 
-      ? new Date(subscription.items.data[0].current_period_start * 1000).toISOString()
+    current_period_start: (subscription as any).current_period_start 
+      ? new Date((subscription as any).current_period_start * 1000).toISOString()
       : null,
-    current_period_end: subscription.items.data[0]?.current_period_end 
-      ? new Date(subscription.items.data[0].current_period_end * 1000).toISOString()
+    current_period_end: (subscription as any).current_period_end 
+      ? new Date((subscription as any).current_period_end * 1000).toISOString()
       : null,
     updated_at: new Date().toISOString(),
   }
