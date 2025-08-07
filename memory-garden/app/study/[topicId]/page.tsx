@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { Topic, Card } from '@/lib/types'
 
 interface StudyPageProps {
@@ -16,6 +17,7 @@ export default function StudyPage({ params }: StudyPageProps) {
   const [showAnswer, setShowAnswer] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [studyComplete, setStudyComplete] = useState(false)
+  const { data: session } = useSession()
 
   useEffect(() => {
     params.then(setResolvedParams)
@@ -34,9 +36,12 @@ export default function StudyPage({ params }: StudyPageProps) {
       }
 
       // Fetch cards from user's study deck for this topic
-      const { getOrCreateSessionId } = await import('@/lib/simple-session')
-      const userSession = getOrCreateSessionId()
-      const cardsResponse = await fetch(`/api/user-study-deck?userId=${userSession}&topicId=${topicId}`)
+      if (!session?.user?.id) {
+        setIsLoading(false)
+        return
+      }
+
+      const cardsResponse = await fetch(`/api/user-study-deck?userId=${session.user.id}&topicId=${topicId}`)
       if (cardsResponse.ok) {
         const studyCards = await cardsResponse.json()
         setCards(studyCards)
@@ -49,10 +54,10 @@ export default function StudyPage({ params }: StudyPageProps) {
   }
 
   useEffect(() => {
-    if (resolvedParams?.topicId) {
+    if (resolvedParams?.topicId && session) {
       fetchStudyData(resolvedParams.topicId)
     }
-  }, [resolvedParams])
+  }, [resolvedParams, session])
 
   const currentCard = cards[currentCardIndex]
 
@@ -82,6 +87,37 @@ export default function StudyPage({ params }: StudyPageProps) {
     } else {
       setStudyComplete(true)
     }
+  }
+
+  // Authentication guard
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-parchment">
+        <div className="container mx-auto px-4 py-8">
+          <div className="max-w-2xl mx-auto text-center">
+            <div className="card-elvish">
+              <h2 className="text-elvish-title text-2xl mb-4">Login Required</h2>
+              <p className="text-elvish-body mb-6">
+                You need to be logged in to access your personal study deck. Please sign in to continue.
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={() => window.location.href = '/api/auth/signin'}
+                  className="btn-elvish w-full"
+                >
+                  Sign In
+                </button>
+                <Link href="/">
+                  <button className="btn-elvish bg-transparent border border-gold text-gold hover:bg-gold hover:text-forest w-full">
+                    Return Home
+                  </button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (isLoading || !topic) {

@@ -17,6 +17,8 @@ export default function TopicPage({ params }: TopicPageProps) {
   const [cards, setCards] = useState<Card[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showCardForm, setShowCardForm] = useState(false)
+  const [showStudyLoginPrompt, setShowStudyLoginPrompt] = useState(false)
+  const { data: session } = useSession()
 
   useEffect(() => {
     params.then(setResolvedParams)
@@ -79,11 +81,20 @@ export default function TopicPage({ params }: TopicPageProps) {
             {topic.description}
           </p>
           <div className="flex justify-center space-x-4">
-            <Link href={`/study/${topic.id}`}>
-              <button className="btn-elvish">
-                Study {cards.filter(c => c.in_study_deck).length > 0 ? `(${cards.filter(c => c.in_study_deck).length})` : ''}
+            {session ? (
+              <Link href={`/study/${topic.id}`}>
+                <button className="btn-elvish">
+                  Study {cards.filter(c => c.in_study_deck).length > 0 ? `(${cards.filter(c => c.in_study_deck).length})` : ''}
+                </button>
+              </Link>
+            ) : (
+              <button 
+                onClick={() => setShowStudyLoginPrompt(true)}
+                className="btn-elvish bg-gold/10 text-gold hover:bg-gold hover:text-forest"
+              >
+                🔐 Login to Study
               </button>
-            </Link>
+            )}
             <button 
               onClick={() => setShowCardForm(!showCardForm)}
               className="btn-elvish bg-transparent border border-gold text-gold hover:bg-gold hover:text-forest"
@@ -94,9 +105,11 @@ export default function TopicPage({ params }: TopicPageProps) {
           
           {/* Study deck status */}
           <div className="text-center mt-2 text-xs text-forest/60">
-            {cards.filter(c => c.in_study_deck).length === 0 
-              ? "Add cards to your study deck to begin studying"
-              : `${cards.filter(c => c.in_study_deck).length} cards in your study deck`
+            {!session
+              ? "Login to create your personal study deck"
+              : cards.filter(c => c.in_study_deck).length === 0 
+                ? "Add cards to your study deck to begin studying"
+                : `${cards.filter(c => c.in_study_deck).length} cards in your study deck`
             }
           </div>
         </header>
@@ -111,6 +124,35 @@ export default function TopicPage({ params }: TopicPageProps) {
                 topicId={topic.id}
                 onCardCreated={() => fetchTopicData(topic.id)}
               />
+            </div>
+          </div>
+        )}
+
+        {/* Study Login Prompt Modal */}
+        {showStudyLoginPrompt && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-parchment p-6 rounded-lg border border-gold/30 max-w-md mx-4">
+              <h3 className="text-elvish-title text-lg mb-4">Login Required for Study Mode</h3>
+              <p className="text-elvish-body text-sm mb-6">
+                Study mode allows you to create a personalized flashcard deck and track your learning progress. To use this feature, please sign in to your account.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowStudyLoginPrompt(false)}
+                  className="btn-elvish bg-transparent border border-gold text-gold hover:bg-gold hover:text-forest"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowStudyLoginPrompt(false)
+                    window.location.href = '/api/auth/signin'
+                  }}
+                  className="btn-elvish"
+                >
+                  Sign In
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -194,26 +236,11 @@ function CardForm({ onCancel, topicId, onCardCreated }: {
       // Get the session ID to send to the API
       const userSession = getOrCreateSessionId()
 
-      // Parse sources from textarea (one URL per line)
-      const sourceUrls = sources
-        .split('\n')
-        .map(url => url.trim())
-        .filter(url => url.length > 0)
-        .filter(url => {
-          // Basic URL validation
-          try {
-            new URL(url)
-            return true
-          } catch {
-            return false
-          }
-        })
-
       // Prepare the data based on whether it's a flashcard or general wisdom
       const cardData: any = {
         topicId,
         type,
-        sources: sourceUrls.length > 0 ? sourceUrls.join('\n') : null,
+        sources: sources.trim() || null, // Send raw sources string, API will process it
         isAnonymous,
         userSession
       }
@@ -454,6 +481,8 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
   const [showSources, setShowSources] = useState(false)
   const [inStudyDeck, setInStudyDeck] = useState(card.in_study_deck)
   const [isTogglingStudyDeck, setIsTogglingStudyDeck] = useState(false)
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false)
+  const { data: session } = useSession()
 
   // Check if current user can delete this card
   const canDelete = () => {
@@ -529,13 +558,19 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
   const handleToggleStudyDeck = async () => {
     if (isTogglingStudyDeck) return
     
+    // Check if user is authenticated
+    if (!session) {
+      setShowLoginPrompt(true)
+      return
+    }
+    
     setIsTogglingStudyDeck(true)
     try {
-      const userSession = getOrCreateSessionId()
+      const userId = session.user.id
       
       if (inStudyDeck) {
         // Remove from deck
-        const response = await fetch(`/api/user-study-deck/${card.id}?userId=${userSession}`, {
+        const response = await fetch(`/api/user-study-deck/${card.id}?userId=${userId}`, {
           method: 'DELETE'
         })
         if (response.ok) {
@@ -549,7 +584,7 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
         const response = await fetch('/api/user-study-deck', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: userSession, cardId: card.id })
+          body: JSON.stringify({ userId, cardId: card.id })
         })
         if (response.ok) {
           setInStudyDeck(true)
@@ -650,12 +685,14 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
             onClick={handleToggleStudyDeck}
             disabled={isTogglingStudyDeck}
             className={`text-xs px-3 py-1 rounded transition-colors flex-1 ${
-              inStudyDeck 
-                ? 'bg-red-100 text-red-600 hover:bg-red-200' 
-                : 'bg-forest/10 text-forest hover:bg-forest/20'
+              !session 
+                ? 'bg-gold/10 text-gold hover:bg-gold/20'
+                : inStudyDeck 
+                  ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+                  : 'bg-forest/10 text-forest hover:bg-forest/20'
             } disabled:opacity-50`}
           >
-            {isTogglingStudyDeck ? '...' : inStudyDeck ? '✓ In Deck' : '➕ Add to Study'}
+            {isTogglingStudyDeck ? '...' : !session ? '🔐 Login to Study' : inStudyDeck ? '✓ In Deck' : '➕ Add to Study'}
           </button>
           <button
             onClick={handleVote}
@@ -693,6 +730,35 @@ function CardDisplay({ card, onCardDeleted }: { card: Card, onCardDeleted: () =>
                 className="btn-elvish bg-red-600 hover:bg-red-700 text-white border-red-600"
               >
                 {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Login prompt modal */}
+      {showLoginPrompt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-parchment p-6 rounded-lg border border-gold/30 max-w-md mx-4">
+            <h3 className="text-elvish-title text-lg mb-4">Login Required</h3>
+            <p className="text-elvish-body text-sm mb-6">
+              To add cards to your personal study deck, you need to be logged in. This helps us save your progress and sync across devices.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowLoginPrompt(false)}
+                className="btn-elvish bg-transparent border border-gold text-gold hover:bg-gold hover:text-forest"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowLoginPrompt(false)
+                  window.location.href = '/api/auth/signin'
+                }}
+                className="btn-elvish"
+              >
+                Sign In
               </button>
             </div>
           </div>

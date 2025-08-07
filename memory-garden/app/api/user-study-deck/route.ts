@@ -1,16 +1,27 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
 // GET /api/user-study-deck - Get user's study deck cards
 export async function GET(request: Request) {
   try {
+    const session = await getServerSession(authOptions)
+    
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
     const topicId = searchParams.get('topicId')
 
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+    // Verify the requested userId matches the authenticated user
+    if (userId && userId !== session.user.id) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
+
+    const authenticatedUserId = session.user.id
 
     const supabase = await createClient()
     let query = supabase
@@ -33,7 +44,7 @@ export async function GET(request: Request) {
           created_at
         )
       `)
-      .eq('user_id', userId)
+      .eq('user_id', authenticatedUserId)
       .order('added_at', { ascending: false })
 
     // If topicId is provided, filter by topic
@@ -68,19 +79,32 @@ export async function GET(request: Request) {
 // POST /api/user-study-deck - Add card to user's study deck
 export async function POST(request: Request) {
   try {
+    const session = await getServerSession(authOptions)
+    
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { userId, cardId } = body
 
-    if (!userId || !cardId) {
-      return NextResponse.json({ error: 'User ID and Card ID are required' }, { status: 400 })
+    if (!cardId) {
+      return NextResponse.json({ error: 'Card ID is required' }, { status: 400 })
     }
+
+    // Verify the requested userId matches the authenticated user (if provided)
+    if (userId && userId !== session.user.id) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+    }
+
+    const authenticatedUserId = session.user.id
 
     const supabase = await createClient()
     // Insert into user_study_decks (will fail if already exists due to unique constraint)
     const { data, error } = await supabase
       .from('user_study_decks')
       .insert({
-        user_id: userId,
+        user_id: authenticatedUserId,
         card_id: cardId
       })
       .select()

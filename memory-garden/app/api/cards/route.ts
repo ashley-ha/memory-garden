@@ -119,6 +119,25 @@ export async function POST(request: Request) {
       }
     }
 
+    // Process sources: convert newline-separated string to array for PostgreSQL
+    let processedSources = null
+    if (sources && typeof sources === 'string' && sources.trim()) {
+      const sourceUrls = sources
+        .split('\n')
+        .map(url => url.trim())
+        .filter(url => url.length > 0)
+        .filter(url => {
+          // Basic URL validation
+          try {
+            new URL(url)
+            return true
+          } catch {
+            return false
+          }
+        })
+      processedSources = sourceUrls.length > 0 ? sourceUrls : null
+    }
+
     const supabase = await createClient()
     
     const cardData = {
@@ -127,7 +146,7 @@ export async function POST(request: Request) {
       content: isFlashcard ? '' : content, // Empty string for flashcards
       front_content: isFlashcard ? frontContent : null,
       back_content: isFlashcard ? backContent : null,
-      sources: sources || null,
+      sources: processedSources,
       author_id: authorId,
       author_name: finalAuthorName
     }
